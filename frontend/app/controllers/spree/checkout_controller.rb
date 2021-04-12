@@ -8,8 +8,8 @@ module Spree
   class CheckoutController < Spree::StoreController
     before_action :load_order
     around_action :lock_order
-    before_action :set_state_if_present
 
+    before_action :ensure_order_is_not_skipping_states
     before_action :ensure_order_not_completed
     before_action :ensure_checkout_allowed
     before_action :ensure_sufficient_stock_lines
@@ -17,13 +17,13 @@ module Spree
 
     before_action :associate_user
     before_action :check_authorization
-    before_action :apply_coupon_code
 
     before_action :setup_for_current_state, only: [:edit, :update]
 
     helper 'spree/orders'
 
     rescue_from Spree::Core::GatewayError, with: :rescue_from_spree_gateway_error
+    rescue_from Spree::Order::InsufficientStock, with: :insufficient_stock_error
 
     # Updates the order and advances to the next state (when possible.)
     def update
@@ -86,11 +86,23 @@ module Spree
     end
 
     def update_params
-      if update_params = massaged_params[:order]
-        update_params.permit(permitted_checkout_attributes)
+      case params[:state].to_sym
+      when :address
+        massaged_params.require(:order).permit(
+          permitted_checkout_address_attributes
+        )
+      when :delivery
+        massaged_params.require(:order).permit(
+          permitted_checkout_delivery_attributes
+        )
+      when :payment
+        massaged_params.require(:order).permit(
+          permitted_checkout_payment_attributes
+        )
       else
-        # We currently allow update requests without any parameters in them.
-        {}
+        massaged_params.fetch(:order, {}).permit(
+          permitted_checkout_confirm_attributes
+        )
       end
     end
 
@@ -98,10 +110,6 @@ module Spree
       massaged_params = params.deep_dup
 
       move_payment_source_into_payments_attributes(massaged_params)
-      if massaged_params[:order] && massaged_params[:order][:existing_card].present?
-        Spree::Deprecation.warn("Passing order[:existing_card] is deprecated. Send order[:wallet_payment_source_id] instead.", caller)
-        move_existing_card_into_payments_attributes(massaged_params) # deprecated
-      end
       move_wallet_payment_source_id_into_payments_attributes(massaged_params)
       set_payment_parameters_amount(massaged_params, @order)
 
@@ -136,7 +144,11 @@ module Spree
       redirect_to(spree.cart_path) && return unless @order
     end
 
-    def set_state_if_present
+    # Allow the customer to only go back or stay on the current state
+    # when trying to change it via params[:state]. It's not allowed to
+    # jump forward and skip states (unless #skip_state_validation? is
+    # truthy).
+    def ensure_order_is_not_skipping_states
       if params[:state]
         redirect_to checkout_state_path(@order.state) if @order.can_go_to_state?(params[:state]) && !skip_state_validation?
         @order.state = params[:state]
@@ -166,23 +178,6 @@ module Spree
       spree.order_path(@order)
     end
 
-    def apply_coupon_code
-      if update_params[:coupon_code].present?
-        @order.coupon_code = update_params[:coupon_code]
-
-        handler = PromotionHandler::Coupon.new(@order).apply
-
-        if handler.error.present?
-          flash.now[:error] = handler.error
-        elsif handler.success
-          flash[:success] = handler.success
-        end
-
-        setup_for_current_state
-        respond_with(@order) { |format| format.html { render :edit } } && return
-      end
-    end
-
     def setup_for_current_state
       method_name = :"before_#{@order.state}"
       send(method_name) if respond_to?(method_name, true)
@@ -192,9 +187,8 @@ module Spree
       @order.assign_default_user_addresses
       # If the user has a default address, the previous method call takes care
       # of setting that; but if he doesn't, we need to build an empty one here
-      default = { country_id: Spree::Country.default.id }
-      @order.build_bill_address(default) unless @order.bill_address
-      @order.build_ship_address(default) if @order.checkout_steps.include?('delivery') && !@order.ship_address
+      @order.bill_address ||= Spree::Address.build_default
+      @order.ship_address ||= Spree::Address.build_default if @order.checkout_steps.include?('delivery')
     end
 
     def before_delivery
@@ -217,9 +211,6 @@ module Spree
         @wallet_payment_sources = try_spree_current_user.wallet.wallet_payment_sources
         @default_wallet_payment_source = @wallet_payment_sources.detect(&:default) ||
                                          @wallet_payment_sources.first
-        # TODO: How can we deprecate this instance variable?  We could try
-        # wrapping it in a delegating object that produces deprecation warnings.
-        @payment_sources = try_spree_current_user.wallet.wallet_payment_sources.map(&:payment_source).select { |ps| ps.is_a?(Spree::CreditCard) }
       end
     end
 
@@ -231,6 +222,23 @@ module Spree
 
     def check_authorization
       authorize!(:edit, current_order, cookies.signed[:guest_token])
+    end
+
+    def insufficient_stock_error
+      packages = @order.shipments.map(&:to_package)
+      if packages.empty?
+        flash[:error] = I18n.t('spree.insufficient_stock_for_order')
+        redirect_to cart_path
+      else
+        availability_validator = Spree::Stock::AvailabilityValidator.new
+        unavailable_items = @order.line_items.reject { |line_item| availability_validator.validate(line_item) }
+        if unavailable_items.any?
+          item_names = unavailable_items.map(&:name).to_sentence
+          flash[:error] = t('spree.inventory_error_flash_for_insufficient_shipment_quantity', unavailable_items: item_names)
+          @order.restart_checkout_flow
+          redirect_to spree.checkout_state_path(@order.state)
+        end
+      end
     end
   end
 end

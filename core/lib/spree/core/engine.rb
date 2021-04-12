@@ -11,8 +11,8 @@ module Spree
       isolate_namespace Spree
       engine_name 'spree'
 
-      config.generators do |g|
-        g.test_framework :rspec
+      config.generators do |generator|
+        generator.test_framework :rspec
       end
 
       initializer "spree.environment", before: :load_config_initializers do |app|
@@ -44,13 +44,25 @@ module Spree
         Migrations.new(config, engine_name).check
       end
 
-      # Load in mailer previews for apps to use in development.
-      # We need to make sure we call `Preview.all` before requiring our
-      # previews, otherwise any previews the app attempts to add need to be
-      # manually required.
-      if Rails.env.development?
-        initializer "spree.mailer_previews" do
+      # Setup Event Subscribers
+      initializer 'spree.core.initialize_subscribers' do |app|
+        app.reloader.to_prepare do
+          Spree::Event.activate_autoloadable_subscribers
+        end
+
+        app.reloader.before_class_unload do
+          Spree::Event.deactivate_all_subscribers
+        end
+      end
+
+      config.after_initialize do
+        # Load in mailer previews for apps to use in development.
+        # We need to make sure we call `Preview.all` before requiring our
+        # previews, otherwise any previews the app attempts to add need to be
+        # manually required.
+        if Rails.env.development? || Rails.env.test?
           ActionMailer::Preview.all
+
           Dir[root.join("lib/spree/mailer_previews/**/*_preview.rb")].each do |file|
             require_dependency file
           end

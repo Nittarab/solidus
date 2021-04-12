@@ -189,7 +189,7 @@ RSpec.describe Spree::CustomerReturn, type: :model do
 
       context 'with Config.track_inventory_levels == false' do
         before do
-          Spree::Config.track_inventory_levels = false
+          stub_spree_preferences(track_inventory_levels: false)
           expect(Spree::StockItem).not_to receive(:find_by)
           expect(Spree::StockMovement).not_to receive(:create!)
         end
@@ -215,7 +215,7 @@ RSpec.describe Spree::CustomerReturn, type: :model do
       end
 
       it "should NOT raise an error when no stock item exists in the stock location" do
-        inventory_unit.find_stock_item.really_destroy!
+        inventory_unit.find_stock_item.destroy
         create(:customer_return_without_return_items, return_items: [return_item], stock_location_id: new_stock_location.id)
       end
 
@@ -233,7 +233,7 @@ RSpec.describe Spree::CustomerReturn, type: :model do
 
     context "it was not received" do
       before do
-        return_item.update_attributes!(reception_status: "lost_in_transit")
+        return_item.update!(reception_status: "lost_in_transit")
       end
 
       it 'should not updated inventory unit to returned' do

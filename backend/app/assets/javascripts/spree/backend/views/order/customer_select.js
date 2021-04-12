@@ -26,16 +26,15 @@ Spree.Views.Order.CustomerSelect = Backbone.View.extend({
     this.$el.select2({
       placeholder: Spree.translations.choose_a_customer,
       ajax: {
-        url: Spree.routes.users_api,
-        params: { "headers": { "X-Spree-Token": Spree.api_key } },
+        url: Spree.pathFor('api/users'),
+        params: { "headers": {  'Authorization': 'Bearer ' + Spree.api_key } },
         datatype: 'json',
         data: function(term, page) {
           return {
             q: {
               m: 'or',
               email_start: term,
-              addresses_firstname_start: term,
-              addresses_lastname_start: term
+              name_start: term
             }
           }
         },

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'discard'
-
 module Spree
   # == Master Variant
   #
@@ -20,11 +18,7 @@ module Spree
   class Variant < Spree::Base
     acts_as_list scope: :product
 
-    acts_as_paranoid
-    include Spree::ParanoiaDeprecations
-
-    include Discard::Model
-    self.discard_column = :deleted_at
+    include Spree::SoftDeletable
 
     after_discard do
       stock_items.discard_all
@@ -36,11 +30,11 @@ module Spree
     attr_writer :rebuild_vat_prices
     include Spree::DefaultPrice
 
-    belongs_to :product, -> { with_deleted }, touch: true, class_name: 'Spree::Product', inverse_of: :variants, optional: false
-    belongs_to :tax_category, class_name: 'Spree::TaxCategory'
+    belongs_to :product, -> { with_discarded }, touch: true, class_name: 'Spree::Product', inverse_of: :variants, optional: false
+    belongs_to :tax_category, class_name: 'Spree::TaxCategory', optional: true
 
-    delegate :name, :description, :slug, :available_on, :shipping_category_id,
-             :meta_description, :meta_keywords, :shipping_category,
+    delegate :name, :description, :slug, :available_on, :discontinue_on, :discontinued?,
+             :shipping_category_id, :meta_description, :meta_keywords, :shipping_category,
              to: :product
     delegate :tax_category, to: :product, prefix: true
     delegate :tax_rates, to: :tax_category
@@ -72,14 +66,15 @@ module Spree
       autosave: true
 
     before_validation :set_cost_currency
-    before_validation :set_price
-    before_validation :build_vat_prices, if: -> { rebuild_vat_prices? || new_record? }
+    before_validation :set_price, if: -> { product && product.master }
+    before_validation :build_vat_prices, if: -> { rebuild_vat_prices? || new_record? && product }
 
+    validates :product, presence: true
     validate :check_price
 
     validates :cost_price, numericality: { greater_than_or_equal_to: 0, allow_nil: true }
     validates :price,      numericality: { greater_than_or_equal_to: 0, allow_nil: true }
-    validates_uniqueness_of :sku, allow_blank: true, if: :enforce_unique_sku?
+    validates_uniqueness_of :sku, allow_blank: true, case_sensitive: true, if: :enforce_unique_sku?
 
     after_create :create_stock_items
     after_create :set_position
@@ -88,7 +83,7 @@ module Spree
     after_save :clear_in_stock_cache
     after_touch :clear_in_stock_cache
 
-    after_real_destroy :destroy_option_values_variants
+    after_destroy :destroy_option_values_variants
 
     # Returns variants that are in stock. When stock locations are provided as
     # a parameter, the scope is limited to variants that are in stock in the
@@ -120,22 +115,11 @@ module Spree
         Spree::StockItem.arel_table[:count_on_hand].gt(0),
         Spree::StockItem.arel_table[:backorderable].eq(true)
       ]
-      joins(:stock_items).where(arel_conditions.inject(:or))
+      joins(:stock_items).where(arel_conditions.inject(:or)).distinct
     end
 
     self.whitelisted_ransackable_associations = %w[option_values product prices default_price]
     self.whitelisted_ransackable_attributes = %w[weight sku]
-
-    # Returns variants that are not deleted and have a price in the given
-    # currency.
-    #
-    # @deprecated Please use the .with_prices scope instead
-    # @param currency [String] the currency to filter by; defaults to Spree's default
-    # @return [ActiveRecord::Relation]
-    def self.active(currency = nil)
-      Spree::Deprecation.warn("`Variant.active(currency)` is deprecated. Please use `Variant.with_prices(pricing_options)` instead.", caller)
-      joins(:prices).where(deleted_at: nil).where('spree_prices.currency' => currency || Spree::Config[:currency]).where('spree_prices.amount IS NOT NULL')
-    end
 
     # Returns variants that have a price for the given pricing options
     # If you have modified the pricing options class, you might want to modify this scope too.
@@ -249,12 +233,12 @@ module Spree
       # no option values on master
       return if is_master
 
-      option_type = Spree::OptionType.where(name: opt_name).first_or_initialize do |o|
-        o.presentation = opt_name
-        o.save!
+      option_type = Spree::OptionType.where(name: opt_name).first_or_initialize do |option|
+        option.presentation = opt_name
+        option.save!
       end
 
-      current_value = option_values.detect { |o| o.option_type.name == opt_name }
+      current_value = option_values.detect { |option| option.option_type.name == opt_name }
 
       if current_value
         return if current_value.name == opt_value
@@ -266,9 +250,9 @@ module Spree
         end
       end
 
-      option_value = Spree::OptionValue.where(option_type_id: option_type.id, name: opt_value).first_or_initialize do |o|
-        o.presentation = opt_value
-        o.save!
+      option_value = Spree::OptionValue.where(option_type_id: option_type.id, name: opt_value).first_or_initialize do |option|
+        option.presentation = opt_value
+        option.save!
       end
 
       option_values << option_value
@@ -280,7 +264,7 @@ module Spree
     # @param opt_name [String] the name of the option whose value you want
     # @return [String] the option value
     def option_value(opt_name)
-      option_values.detect { |o| o.option_type.name == opt_name }.try(:presentation)
+      option_values.detect { |option| option.option_type.name == opt_name }.try(:presentation)
     end
 
     # Returns an instance of the globally configured variant price selector class for this variant.
@@ -308,26 +292,6 @@ module Spree
       diff = price_difference_from_master(pricing_options)
       diff && diff.zero?
     end
-
-    # Converts the variant's price to the given currency.
-    #
-    # @deprecated Please use #price_for(pricing_options) instead
-    # @param currency [String] the desired currency
-    # @return [Spree::Price] the price in the desired currency
-    def price_in(currency)
-      prices.currently_valid.find_by(currency: currency)
-    end
-    deprecate price_in: :price_for, deprecator: Spree::Deprecation
-
-    # Fetches the price amount in the specified currency.
-    #
-    # @deprecated Please use #price_for instead and use a money object rathern than a BigDecimal.
-    # @param currency (see #price)
-    # @return [Float] the amount in the specified currency.
-    def amount_in(currency)
-      price_in(currency).try(:amount)
-    end
-    deprecate amount_in: :price_for, deprecator: Spree::Deprecation
 
     # Generates a friendly name and sku string.
     #
@@ -372,27 +336,14 @@ module Spree
       track_inventory? && Spree::Config.track_inventory_levels
     end
 
-    # Image that can be used for the variant.
-    #
-    # Will first search for images on the variant. If it doesn't find any,
-    # it'll fallback to any variant image (unless +fallback+ is +false+) or to
-    # a new {Spree::Image}.
-    # @param fallback [Boolean] whether or not we should fallback to an image
-    #   not from this variant
-    # @return [Spree::Image] the image to display
-    def display_image(fallback: true)
-      Spree::Deprecation.warn('Spree::Variant#display_image is DEPRECATED. Choose an image from Spree::Variant#gallery instead')
-      images.first || (fallback && product.variant_images.first) || Spree::Image.new
-    end
-
     # Determines the variant's property values by verifying which of the product's
     # variant property rules apply to itself.
     #
     # @return [Array<Spree::VariantPropertyRuleValue>] variant_properties
     def variant_properties
-      product.variant_property_rules.map do |rule|
+      product.variant_property_rules.flat_map do |rule|
         rule.values if rule.applies_to_variant?(self)
-      end.flatten.compact
+      end.compact
     end
 
     # The gallery for the variant, which represents all the images
@@ -418,10 +369,7 @@ module Spree
 
     # Ensures a new variant takes the product master price when price is not supplied
     def set_price
-      if price.nil? && Spree::Config[:require_master_price] && !is_master?
-        raise 'No master variant found to infer price' unless product && product.master
-        self.price = product.master.price
-      end
+      self.price = product.master.price if price.nil? && Spree::Config[:require_master_price] && !is_master?
     end
 
     def check_price
@@ -441,7 +389,7 @@ module Spree
     end
 
     def build_vat_prices
-      VatPriceGenerator.new(self).run
+      Spree::Config.variant_vat_prices_generator_class.new(self).run
     end
 
     def set_position

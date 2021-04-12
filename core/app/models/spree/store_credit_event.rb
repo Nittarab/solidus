@@ -1,20 +1,14 @@
 # frozen_string_literal: true
 
-require 'discard'
-
 module Spree
   class StoreCreditEvent < Spree::Base
-    acts_as_paranoid
-    include Spree::ParanoiaDeprecations
+    include Spree::SoftDeletable
 
-    include Discard::Model
-    self.discard_column = :deleted_at
+    belongs_to :store_credit, optional: true
+    belongs_to :originator, polymorphic: true, optional: true
+    belongs_to :store_credit_reason, class_name: 'Spree::StoreCreditReason', inverse_of: :store_credit_events, optional: true
 
-    belongs_to :store_credit
-    belongs_to :originator, polymorphic: true
-    belongs_to :update_reason, class_name: "Spree::StoreCreditUpdateReason"
-
-    validates_presence_of :update_reason, if: :action_requires_reason?
+    validates_presence_of :store_credit_reason, if: :action_requires_reason?
 
     NON_EXPOSED_ACTIONS = [Spree::StoreCredit::ELIGIBLE_ACTION, Spree::StoreCredit::AUTHORIZE_ACTION]
 

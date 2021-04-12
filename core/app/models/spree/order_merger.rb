@@ -56,11 +56,13 @@ module Spree
       end
 
       set_user(user)
-      persist_merge
+      if order.valid?
+        persist_merge
 
-      # So that the destroy doesn't take out line items which may have been re-assigned
-      other_order.line_items.reload
-      other_order.destroy
+        # So that the destroy doesn't take out line items which may have been re-assigned
+        other_order.line_items.reload
+        other_order.destroy
+      end
     end
 
     private
@@ -126,7 +128,7 @@ module Spree
     # @param [Spree::LineItem] line_item The line item which could not be saved
     # @return [void]
     def handle_error(line_item)
-      order.errors[:base] << line_item.errors.full_messages
+      order.errors.add(:base, line_item.errors.full_messages)
     end
 
     # Save the order totals after merge

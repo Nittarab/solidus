@@ -8,6 +8,7 @@
 
     <%= f.field_container :code do %>
       <%= f.label :code, class: 'required' %>
+      <%= f.field_hint :code %>
       <%= f.text_field :code, required: true, class: 'fullwidth' %>
       <%= f.error_message_on :code %>
     <% end %>
@@ -41,6 +42,12 @@
       <%= f.label :mail_from_address, class: 'required' %>
       <%= f.text_field :mail_from_address, required: true, class: 'fullwidth'  %>
       <%= f.error_message_on :mail_from_address %>
+    <% end %>
+
+    <%= f.field_container :bcc_email do %>
+      <%= f.label :bcc_email %>
+      <%= f.text_field :bcc_email, class: 'fullwidth' %>
+      <%= f.error_message_on :bcc_email %>
     <% end %>
 
     <%= f.field_container :default_currency do %>

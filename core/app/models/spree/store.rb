@@ -17,19 +17,13 @@ module Spree
 
     has_many :orders, class_name: "Spree::Order"
 
-    validates :code, presence: true, uniqueness: { allow_blank: true }
+    validates :code, presence: true, uniqueness: { allow_blank: true, case_sensitive: true }
     validates :name, presence: true
     validates :url, presence: true
     validates :mail_from_address, presence: true
 
     before_save :ensure_default_exists_and_is_unique
     before_destroy :validate_not_default
-
-    scope :by_url, lambda { |url| where("url like ?", "%#{url}%") }
-
-    class << self
-      deprecate :by_url, "Spree::Store.by_url is DEPRECATED", deprecator: Spree::Deprecation
-    end
 
     def available_locales
       locales = super()
@@ -47,12 +41,6 @@ module Spree
       else
         super(locales.map(&:to_s).join(","))
       end
-    end
-
-    def self.current(store_key)
-      Spree::Deprecation.warn "Spree::Store.current is DEPRECATED"
-      current_store = Store.find_by(code: store_key) || Store.by_url(store_key).first if store_key
-      current_store || Store.default
     end
 
     def self.default

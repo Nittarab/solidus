@@ -53,11 +53,72 @@ describe "Order Details", type: :feature, js: true do
         end
       end
 
-      it "can add an item" do
-        add_line_item "spree t-shirt", quantity: 2
+      context 'when adding an item' do
+        context 'when the item can be added to the existing shipment' do
+          it "adds the item to the existing shipment" do
+            expect(order.shipments.count).to be 1
 
-        within("#order_total") do
-          expect(page).to have_content("$80.00")
+            add_line_item "spree t-shirt", quantity: 2
+
+            within("#order_total") do
+              expect(page).to have_content("$80.00")
+            end
+
+            expect(order.shipments.count).to be 1
+          end
+        end
+
+        context 'when the items cannot be added to the existing shipment' do
+          before do
+            create :payment, order: order, amount: order.amount
+            visit spree.admin_order_payments_path(order)
+            find('.fa-capture').click
+          end
+
+          it "adds an item creating a new shipment and changes the payment status" do
+            within('#payment_status') do
+              expect(page).to have_content("Paid")
+            end
+
+            visit spree.cart_admin_order_path(order)
+
+            stock_location_ids = (0..1).map do |n|
+              create :stock_location, name: "Warehouse #{n}", backorderable_default: false
+            end.map(&:id)
+
+            product = create :product
+
+            product.stock_items.where.not(stock_location_id: stock_location_ids).discard_all
+
+            product.stock_items.where(stock_location_id: stock_location_ids).each do |stock_item|
+              stock_item.set_count_on_hand 1
+            end
+
+            expect(order.shipments.count).to be 1
+
+            add_line_item product.name, quantity: 2
+
+            within 'table.line-items' do
+              expect(page).to have_content product.name
+              expect(page).to have_content product.price
+            end
+
+            expect(order.shipments.count).to be 3
+
+            within("#order_total") do
+              expect(page).to have_content("$79.98")
+            end
+
+            within('#payment_status') do
+              expect(page).to have_content("Balance due")
+            end
+
+            click_link 'Shipments'
+
+            order.shipments.each do |shipment|
+              expect(page).to have_content shipment.number
+            end
+          end
         end
       end
 
@@ -68,6 +129,19 @@ describe "Order Details", type: :feature, js: true do
           accept_confirm "Are you sure you want to delete this record?" do
             click_icon :trash
           end
+        end
+
+        expect(page).not_to have_content("spree t-shirt")
+
+        # Should have a new item row
+        expect(page).to have_field('quantity')
+      end
+
+      it "can remove all items with empty cart" do
+        expect(page).to have_content("spree t-shirt")
+
+        accept_confirm "Are you sure you want to delete this record?" do
+          click_on 'Empty Cart'
         end
 
         expect(page).not_to have_content("spree t-shirt")
@@ -151,6 +225,21 @@ describe "Order Details", type: :feature, js: true do
         end
       end
 
+      context "with adjustments" do
+        let(:order) do
+          super().tap do |o|
+            o.adjustments.create!(order: order, label: 'Non-Eligible', amount: 10, eligible: false)
+            o.adjustments.create!(order: order, label: 'Rebate', amount: 10)
+          end
+        end
+
+        it "shows only eligible adjustments" do
+          visit spree.cart_admin_order_path(order)
+          expect(page).to have_content("Rebate")
+          expect(page).not_to have_content("Non-Eligible")
+        end
+      end
+
       context "variant doesn't track inventory" do
         let(:track_inventory) { false }
         let(:backorderable) { false }
@@ -191,9 +280,14 @@ describe "Order Details", type: :feature, js: true do
       end
 
       context 'splitting to location' do
-        # can not properly implement until poltergeist supports checking alert text
-        # see https://github.com/teampoltergeist/poltergeist/pull/516
-        it 'should warn you if you have not selected a location or shipment'
+        it 'should warn you if you have not selected a location or shipment' do
+          visit spree.edit_admin_order_path(order)
+
+          within('tr', text: line_item.sku) { click_icon 'arrows-h' }
+          accept_alert 'Please select the split destination.' do
+            click_icon :ok
+          end
+        end
 
         context 'there is enough stock at the other location' do
           it 'should allow me to make a split' do
@@ -273,8 +367,7 @@ describe "Order Details", type: :feature, js: true do
 
           context 'A shipment has shipped' do
             it 'should not show or let me back to the cart page, nor show the shipment edit buttons' do
-              order = create(:order, state: 'payment')
-              order.shipments.create!(stock_location_id: stock_location.id, state: 'shipped')
+              order = create(:shipped_order, state: 'payment', stock_location: stock_location)
 
               visit spree.cart_admin_order_path(order)
 
@@ -499,11 +592,11 @@ describe "Order Details", type: :feature, js: true do
 
   context 'with only read permissions' do
     before do
-      allow_any_instance_of(Spree::Admin::BaseController).to receive(:spree_current_user).and_return(nil)
+      allow_any_instance_of(Spree::Admin::BaseController).to receive(:try_spree_current_user).and_return(nil)
     end
 
     custom_authorization! do |_user|
-      can [:admin, :index, :read, :edit], Spree::Order
+      can [:admin, :index, :show, :edit], Spree::Order
     end
     it "should not display forbidden links" do
       visit spree.edit_admin_order_path(order)
@@ -520,17 +613,15 @@ describe "Order Details", type: :feature, js: true do
       expect(page).not_to have_css('.delete-item')
       expect(page).not_to have_css('.split-item')
       expect(page).not_to have_css('.edit-tracking')
-
-      expect(page).not_to have_css('#add-line-item')
     end
   end
 
   context 'as Fakedispatch' do
     custom_authorization! do |_user|
       # allow dispatch to :admin, :index, and :edit on Spree::Order
-      can [:admin, :edit, :index, :read], Spree::Order
+      can [:admin, :edit, :index, :show], Spree::Order
       # allow dispatch to :index, :show, :create and :update shipments on the admin
-      can [:admin, :manage, :read, :ship], Spree::Shipment
+      can [:admin, :manage, :show, :ship], Spree::Shipment
     end
 
     before do

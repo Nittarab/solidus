@@ -172,7 +172,7 @@ module Spree
           }.not_to change { Spree::Adjustment.count }
 
           expect(adjustment.source).to eq(nil)
-          expect(Spree::PromotionAction.with_deleted.find(adjustment.source_id)).to be_present
+          expect(Spree::PromotionAction.with_discarded.find(adjustment.source_id)).to be_present
         end
 
         it "doesnt mess with unrelated adjustments" do
@@ -187,11 +187,6 @@ module Spree
 
     describe "#discard" do
       subject { action.discard }
-      it_should_behave_like "destroying adjustments from incomplete orders"
-    end
-
-    describe "#paranoia_destroy" do
-      subject { Spree::Deprecation.silence { action.paranoia_destroy } }
       it_should_behave_like "destroying adjustments from incomplete orders"
     end
   end

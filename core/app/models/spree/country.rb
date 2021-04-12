@@ -8,13 +8,18 @@ module Spree
 
     validates :name, :iso_name, presence: true
 
+    self.whitelisted_ransackable_attributes = %w[name]
+
     def self.default
-      if Spree::Config.default_country_id
-        Spree::Deprecation.warn("Setting your default country via its ID is deprecated. Please set your default country via the `default_country_iso` setting.", caller)
-        find_by(id: Spree::Config.default_country_id) || find_by!(iso: Spree::Config.default_country_iso)
-      else
-        find_by!(iso: Spree::Config.default_country_iso)
-      end
+      find_by!(iso: Spree::Config.default_country_iso)
+    end
+
+    def self.available(restrict_to_zone: Spree::Config[:checkout_zone])
+      checkout_zone = Zone.find_by(name: restrict_to_zone)
+
+      return checkout_zone.country_list if checkout_zone.try(:kind) == 'country'
+
+      all
     end
 
     def <=>(other)

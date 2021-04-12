@@ -18,7 +18,7 @@ RSpec.describe Spree::Variant::VatPriceGenerator do
     let!(:french_vat) { create(:tax_rate, included_in_price: true, amount: 0.20, zone: france_zone, tax_categories: [tax_category]) }
 
     before do
-      Spree::Config.admin_vat_country_iso = "DE"
+      stub_spree_preferences(admin_vat_country_iso: "DE")
     end
 
     it "builds a correct price including VAT for all VAT countries" do
@@ -37,7 +37,7 @@ RSpec.describe Spree::Variant::VatPriceGenerator do
 
     # We need to remove the price for FR from the database so it is created in memory, and then run VatPriceGenerator twice to trigger the duplicate price issue.
     it "will not build duplicate prices on multiple runs" do
-      variant.prices.where(country_iso: "FR").each(&:really_destroy!)
+      variant.prices.where(country_iso: "FR").each(&:destroy)
       variant.reload
       described_class.new(variant).run
       expect { subject }.not_to change { variant.prices.size }

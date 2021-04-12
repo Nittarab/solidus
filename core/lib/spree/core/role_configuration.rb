@@ -31,20 +31,6 @@ module Spree
 
     attr_accessor :roles
 
-    class << self
-      def instance
-        Spree::Deprecation.warn "Spree::RoleConfiguration.instance is DEPRECATED use Spree::Config.roles instead"
-        Spree::Config.roles
-      end
-
-      # Yields the instance of the singleton, used for configuration
-      # @yieldparam instance [Spree::RoleConfiguration]
-      def configure
-        Spree::Deprecation.warn "Spree::RoleConfiguration.configure is deprecated. Call Spree::Config.roles.assign_permissions instead"
-        yield(Spree::Config.roles)
-      end
-    end
-
     # Given a CanCan::Ability, and a user, determine what permissions sets can
     # be activated on the ability, then activate them.
     #
@@ -69,8 +55,8 @@ module Spree
     # Not public due to the fact this class is a Singleton
     # @!visibility private
     def initialize
-      @roles = Hash.new do |h, name|
-        h[name] = Role.new(name, Set.new)
+      @roles = Hash.new do |hash, name|
+        hash[name] = Role.new(name, Set.new)
       end
     end
 

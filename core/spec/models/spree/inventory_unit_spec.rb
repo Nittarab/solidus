@@ -97,8 +97,6 @@ RSpec.describe Spree::InventoryUnit, type: :model do
         shipment.stock_location = stock_location
         shipment.shipping_methods << create(:shipping_method)
         shipment.order = other_order
-        # We don't care about this in this test
-        allow(shipment).to receive(:ensure_correct_adjustment)
         shipment.tap(&:save!)
       end
 
@@ -131,26 +129,7 @@ RSpec.describe Spree::InventoryUnit, type: :model do
     end
   end
 
-  context "#finalize_units!" do
-    let!(:stock_location) { create(:stock_location) }
-    let(:variant) { create(:variant) }
-    let(:inventory_units) {
-      [
-      create(:inventory_unit, variant: variant),
-      create(:inventory_unit, variant: variant)
-    ]
-    }
-
-    it "should create a stock movement" do
-      expect(Spree::Deprecation).to receive(:warn)
-      Spree::InventoryUnit.finalize_units!(inventory_units)
-      expect(inventory_units.any?(&:pending)).to be false
-    end
-  end
-
   describe "#current_or_new_return_item" do
-    before { allow(inventory_unit).to receive_messages(total_excluding_vat: 100.0) }
-
     subject { inventory_unit.current_or_new_return_item }
 
     context "associated with a return item" do

@@ -15,7 +15,9 @@ module Spree
     end
 
     before do
-      allow(helper).to receive(:current_pricing_options) { pricing_options }
+      without_partial_double_verification do
+        allow(helper).to receive(:current_pricing_options) { pricing_options }
+      end
     end
 
     context "#variant_price_diff" do
@@ -73,7 +75,7 @@ module Spree
       let(:variant_price) { 15 }
 
       before do
-        Spree::Config[:show_variant_full_price] = true
+        stub_spree_preferences(show_variant_full_price: true)
         variant
       end
 
@@ -146,7 +148,7 @@ THIS IS THE BEST PRODUCT EVER!
 
         product.description = description
 
-        Spree::Config[:show_raw_product_description] = true
+        stub_spree_preferences(show_raw_product_description: true)
         description = product_description(product)
         expect(description).to eq(description)
       end

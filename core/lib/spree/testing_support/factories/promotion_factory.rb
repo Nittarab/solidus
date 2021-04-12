@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
-require 'spree/testing_support/factories/promotion_code_factory'
-require 'spree/testing_support/factories/variant_factory'
+require 'spree/testing_support/factory_bot'
+Spree::TestingSupport::FactoryBot.when_cherry_picked do
+  Spree::TestingSupport::FactoryBot.deprecate_cherry_picking
+
+  require 'spree/testing_support/factories/promotion_code_factory'
+  require 'spree/testing_support/factories/variant_factory'
+end
 
 FactoryBot.define do
   factory :promotion, class: 'Spree::Promotion' do
@@ -16,6 +21,12 @@ FactoryBot.define do
       end
     end
 
+    trait :with_action do
+      after(:create) do |promotion, _evaluator|
+        promotion.actions << Spree::Promotion::Actions::CreateAdjustment.new
+      end
+    end
+
     trait :with_line_item_adjustment do
       transient do
         adjustment_rate { 10 }
@@ -27,7 +38,14 @@ FactoryBot.define do
         Spree::Promotion::Actions::CreateItemAdjustments.create!(calculator: calculator, promotion: promotion)
       end
     end
+
     factory :promotion_with_item_adjustment, traits: [:with_line_item_adjustment]
+
+    trait :with_free_shipping do
+      after(:create) do |promotion|
+        Spree::Promotion::Actions::FreeShipping.create!(promotion: promotion)
+      end
+    end
 
     trait :with_order_adjustment do
       transient do
@@ -60,5 +78,15 @@ FactoryBot.define do
       end
     end
     factory :promotion_with_item_total_rule, traits: [:with_item_total_rule]
+    trait :with_first_order_rule do
+      after(:create) do |promotion, _evaluator|
+        rule = Spree::Promotion::Rules::FirstOrder.create!(
+          promotion: promotion,
+        )
+        promotion.rules << rule
+        promotion.save!
+      end
+    end
+    factory :promotion_with_first_order_rule, traits: [:with_first_order_rule]
   end
 end

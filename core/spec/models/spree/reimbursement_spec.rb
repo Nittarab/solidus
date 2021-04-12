@@ -3,6 +3,28 @@
 require 'rails_helper'
 
 RSpec.describe Spree::Reimbursement, type: :model do
+  describe ".create" do
+    let(:customer_return) { create(:customer_return) }
+    let(:order) { customer_return.order }
+    let(:reimbursement) { build(:reimbursement, order: order) }
+
+    subject { reimbursement.save }
+
+    context "when total is not present" do
+      before do
+        allow(reimbursement).to receive(:calculated_total) { 100 }
+      end
+
+      it { expect { subject }.to change(reimbursement, :total).from(nil).to(100.0) }
+    end
+
+    context "when total is present" do
+      let(:reimbursement) { build(:reimbursement, order: order, total: 10) }
+
+      it { expect { subject }.not_to change(reimbursement, :total).from(10) }
+    end
+  end
+
   describe ".before_create" do
     describe "#generate_number" do
       context "number is assigned" do
@@ -132,7 +154,8 @@ RSpec.describe Spree::Reimbursement, type: :model do
     context 'when reimbursement cannot be fully performed' do
       let!(:non_return_refund) { create(:refund, amount: 1, payment: payment) }
 
-      it 'raises IncompleteReimbursement error' do
+      it 'does not send a reimbursement email and raises IncompleteReimbursement error' do
+        expect(Spree::ReimbursementMailer).not_to receive(:reimbursement_email)
         expect { subject }.to raise_error(Spree::Reimbursement::IncompleteReimbursementError)
       end
     end
@@ -146,7 +169,7 @@ RSpec.describe Spree::Reimbursement, type: :model do
       end
     end
 
-    it "triggers the reimbursement mailer to be sent" do
+    it "triggers the reimbursement mailer to be sent via subscribed event" do
       expect(Spree::ReimbursementMailer).to receive(:reimbursement_email).with(reimbursement.id) { double(deliver_later: true) }
       subject
     end
@@ -250,6 +273,19 @@ RSpec.describe Spree::Reimbursement, type: :model do
 
     it "performs a reimbursment" do
       expect { subject }.to change { reimbursement.refunds.count }.by(1)
+    end
+  end
+
+  describe '#store_credit_category' do
+    let(:reimbursement) { create(:reimbursement) }
+
+    before do
+      create(:store_credit_category, name: 'foo')
+      create(:store_credit_category, :reimbursement)
+    end
+
+    it 'fetches the the default reimbursement store category' do
+      expect(reimbursement.store_credit_category.name).to eq('Reimbursement')
     end
   end
 end

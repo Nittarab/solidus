@@ -57,9 +57,6 @@ module Spree
         #
         def compute_amount(line_item)
           adjustment_amount = calculator.compute(PartialLineItem.new(line_item))
-          if !adjustment_amount.is_a?(BigDecimal)
-            Spree::Deprecation.warn "#{calculator.class.name}#compute returned #{adjustment_amount.inspect}, it should return a BigDecimal"
-          end
           adjustment_amount ||= BigDecimal(0)
           adjustment_amount = adjustment_amount.abs
 
@@ -67,7 +64,7 @@ module Spree
           line_items = actionable_line_items(order)
 
           actioned_line_items = order.line_item_adjustments.reload.
-            select { |a| a.source == self && a.amount < 0 }.
+            select { |adjustment| adjustment.source == self && adjustment.amount < 0 }.
             map(&:adjustable)
           other_line_items = actioned_line_items - [line_item]
 

@@ -4,8 +4,8 @@ module Spree
   class Reimbursement < Spree::Base
     class IncompleteReimbursementError < StandardError; end
 
-    belongs_to :order, inverse_of: :reimbursements
-    belongs_to :customer_return, inverse_of: :reimbursements, touch: true
+    belongs_to :order, inverse_of: :reimbursements, optional: true
+    belongs_to :customer_return, inverse_of: :reimbursements, touch: true, optional: true
 
     has_many :refunds, inverse_of: :reimbursement
     has_many :credits, inverse_of: :reimbursement, class_name: 'Spree::Reimbursement::Credit'
@@ -18,6 +18,7 @@ module Spree
     accepts_nested_attributes_for :return_items, allow_destroy: true
 
     before_create :generate_number
+    before_create :calculate_total
 
     scope :reimbursed, -> { where(reimbursement_status: 'reimbursed') }
 
@@ -50,23 +51,7 @@ module Spree
     class_attribute :reimbursement_performer
     self.reimbursement_performer = ReimbursementPerformer
 
-    # These are called if the call to "reimburse!" succeeds.
-    class_attribute :reimbursement_success_hooks
-    self.reimbursement_success_hooks = []
-
-    # These are called if the call to "reimburse!" fails.
-    class_attribute :reimbursement_failure_hooks
-    self.reimbursement_failure_hooks = []
-
-    state_machine :reimbursement_status, initial: :pending do
-      event :errored do
-        transition to: :errored, from: [:pending, :errored]
-      end
-
-      event :reimbursed do
-        transition to: :reimbursed, from: [:pending, :errored]
-      end
-    end
+    include ::Spree::Config.state_machines.reimbursement
 
     class << self
       def build_from_customer_return(customer_return)
@@ -98,10 +83,7 @@ module Spree
       total - paid_amount
     end
 
-    def perform!(created_by: nil)
-      unless created_by
-        Spree::Deprecation.warn("Calling #perform on #{self} without created_by is deprecated")
-      end
+    def perform!(created_by:)
       reimbursement_tax_calculator.call(self)
       reload
       update!(total: calculated_total)
@@ -110,19 +92,18 @@ module Spree
 
       if unpaid_amount_within_tolerance?
         reimbursed!
-        reimbursement_success_hooks.each { |h| h.call self }
-        send_reimbursement_email
+        Spree::Event.fire 'reimbursement_reimbursed', reimbursement: self
       else
         errored!
-        reimbursement_failure_hooks.each { |h| h.call self }
+        Spree::Event.fire 'reimbursement_errored', reimbursement: self
+      end
+
+      if errored?
         raise IncompleteReimbursementError, I18n.t("spree.validation.unpaid_amount_not_zero", amount: unpaid_amount)
       end
     end
 
-    def simulate(created_by: nil)
-      unless created_by
-        Spree::Deprecation.warn("Calling #simulate on #{self} without created_by is deprecated")
-      end
+    def simulate(created_by:)
       reimbursement_simulator_tax_calculator.call(self)
       reload
       update!(total: calculated_total)
@@ -147,16 +128,25 @@ module Spree
     # @api public
     # @param [Spree.user_class] created_by the user that is performing this action
     # @return [void]
-    def return_all(created_by: nil)
-      unless created_by
-        Spree::Deprecation.warn("Calling #return_all on #{self} without created_by is deprecated")
-      end
+    def return_all(created_by:)
       return_items.each(&:accept!)
       save!
       perform!(created_by: created_by)
     end
 
+    # The returned category is used as the category
+    # for Spree::Reimbursement::Credit.default_creditable_class.
+    #
+    # @return [Spree::StoreCreditCategory]
+    def store_credit_category
+      Spree::StoreCreditCategory.find_by(name: Spree::StoreCreditCategory::REIMBURSEMENT)
+    end
+
     private
+
+    def calculate_total
+      self.total ||= calculated_total
+    end
 
     def generate_number
       self.number ||= loop do
@@ -169,10 +159,6 @@ module Spree
       if return_items.any? { |ri| ri.inventory_unit.order_id != order_id }
         errors.add(:base, :return_items_order_id_does_not_match)
       end
-    end
-
-    def send_reimbursement_email
-      Spree::Config.reimbursement_mailer_class.reimbursement_email(id).deliver_later
     end
 
     # If there are multiple different reimbursement types for a single

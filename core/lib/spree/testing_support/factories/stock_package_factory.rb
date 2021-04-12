@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
-require 'spree/testing_support/factories/inventory_unit_factory'
-require 'spree/testing_support/factories/variant_factory'
+require 'spree/testing_support/factory_bot'
+Spree::TestingSupport::FactoryBot.when_cherry_picked do
+  Spree::TestingSupport::FactoryBot.deprecate_cherry_picking
+
+  require 'spree/testing_support/factories/inventory_unit_factory'
+  require 'spree/testing_support/factories/variant_factory'
+end
 
 FactoryBot.define do
   factory :stock_package, class: 'Spree::Stock::Package' do
@@ -17,7 +22,7 @@ FactoryBot.define do
 
     after(:build) do |package, evaluator|
       evaluator.variants_contents.each do |variant, count|
-        package.add_multiple build_list(:inventory_unit, count, variant: variant)
+        package.add_multiple build_list(:inventory_unit, count, variant: variant, stock_location: evaluator.stock_location)
       end
     end
 

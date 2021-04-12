@@ -66,11 +66,7 @@ Spree::Core::Engine.routes.draw do
 
     delete '/option_values/:id', to: "option_values#destroy", as: :option_value
 
-    resources :properties do
-      collection do
-        get :filtered
-      end
-    end
+    resources :properties
 
     delete '/product_properties/:id', to: "product_properties#destroy", as: :product_property
 
@@ -106,7 +102,6 @@ Spree::Core::Engine.routes.draw do
           put :fire
         end
 
-        resources :log_entries
         resources :refunds, only: [:new, :create, :edit, :update]
       end
 
@@ -132,7 +127,9 @@ Spree::Core::Engine.routes.draw do
       collection do
         post :update_positions
       end
-      resources :taxons
+      resources :taxons do
+        resource :attachment, controller: 'taxons/attachment', only: [:destroy]
+      end
     end
 
     resources :taxons, only: [:index, :show] do
@@ -145,6 +142,7 @@ Spree::Core::Engine.routes.draw do
     resources :adjustment_reasons, except: [:show, :destroy]
     resources :refund_reasons, except: [:show, :destroy]
     resources :return_reasons, except: [:show, :destroy]
+    resources :store_credit_reasons, except: [:show]
 
     resources :shipping_methods
     resources :shipping_categories

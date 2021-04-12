@@ -3,11 +3,45 @@
 require 'rails_helper'
 
 RSpec.describe Spree::Taxon, type: :model do
+  it_behaves_like 'an attachment' do
+    subject { create(:taxon) }
+    let(:attachment_name) { :icon }
+    let(:default_style) { :mini }
+  end
+
   context "#destroy" do
     subject(:nested_set_options) { described_class.acts_as_nested_set_options }
 
     it "should destroy all associated taxons" do
       expect(nested_set_options[:dependent]).to eq :destroy
+    end
+  end
+
+  describe "#destroy_attachment" do
+    context "when trying to destroy a valid attachment definition" do
+      context "and taxon has a file attached " do
+        it "removes the attachment" do
+          taxon = create(:taxon, :with_icon)
+
+          expect(taxon.destroy_attachment(:icon)).to be_truthy
+        end
+      end
+
+      context "and the taxon does not have any file attached yet" do
+        it "returns false" do
+          taxon = create(:taxon)
+
+          expect(taxon.destroy_attachment(:icon)).to be_falsey
+        end
+      end
+    end
+
+    context "when trying to destroy an invalid attachment" do
+      it 'returns false' do
+        taxon = create(:taxon)
+
+        expect(taxon.destroy_attachment(:foo)).to be_falsey
+      end
     end
   end
 
@@ -26,6 +60,14 @@ RSpec.describe Spree::Taxon, type: :model do
       expect(taxon.permalink).to eql "ruby-on-rails"
     end
 
+    context "updating a taxon permalink" do
+      it 'parameterizes permalink correctly' do
+        taxon.save!
+        taxon.update(permalink: 'spécial&charactèrs')
+        expect(taxon.permalink).to eql "special-characters"
+      end
+    end
+
     context "with parent taxon" do
       let(:parent) { FactoryBot.build(:taxon, permalink: "brands") }
       before       { allow(taxon).to receive_messages parent: parent }
@@ -39,6 +81,12 @@ RSpec.describe Spree::Taxon, type: :model do
         taxon.permalink = "b/rubyonrails"
         taxon.set_permalink
         expect(taxon.permalink).to eql "brands/rubyonrails"
+      end
+
+      it 'parameterizes permalink correctly' do
+        taxon.save!
+        taxon.update(permalink_part: 'spécial&charactèrs')
+        expect(taxon.reload.permalink).to eql "brands/special-characters"
       end
 
       # Regression test for https://github.com/spree/spree/issues/3390
@@ -121,6 +169,20 @@ RSpec.describe Spree::Taxon, type: :model do
         is_expected.to change{ taxon2_child.reload.permalink }.from('t/t2/t2_child').to('t/t1/foo/t2_child')
       end
     end
+
+    context 'changing parent permalink with special characters ' do
+      subject do
+        -> { taxon2.update!(permalink: 'spécial&charactèrs') }
+      end
+
+      it 'changes own permalink with parameterized characters' do
+        is_expected.to change{ taxon2.reload.permalink }.from('t/t2').to('t/special-characters')
+      end
+
+      it 'changes child permalink with parameterized characters' do
+        is_expected.to change{ taxon2_child.reload.permalink }.from('t/t2/t2_child').to('t/special-characters/t2_child')
+      end
+    end
   end
 
   # Regression test for https://github.com/spree/spree/issues/2620
@@ -162,7 +224,7 @@ RSpec.describe Spree::Taxon, type: :model do
       it 'returns all descendant variants' do
         variants = taxon.all_variants
         expect(variants.count).to eq(9)
-        expect(variants).to match_array([product1, product2, product3].map{ |p| p.variants_including_master }.flatten)
+        expect(variants).to match_array([product1, product2, product3].flat_map(&:variants_including_master))
       end
     end
   end

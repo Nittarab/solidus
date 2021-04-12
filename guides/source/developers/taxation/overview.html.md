@@ -49,13 +49,15 @@ In Solidus, a tax rate consists of at least four values:
 
 - The descriptive name for the tax rate. For example, "Minnesota Sales Tax" for
   a Minnesota state tax rate.
-- The zone that the tax rate should apply to. <!-- TODO: Link to zones article.-->
+- The [zone][zone] that the tax rate should apply to.
 - The rate (in the form of a percentage of the price).
 - The "Included in price" boolean. This indicates whether the tax is included in
   the price (for value-added taxes) or added to the price (U.S. taxes).
 
 Solidus calculates tax based on the matching tax rate(s) for the order's [tax
-address](#tax-addresses). 
+address](#tax-addresses).
+
+[zone]: ../locations/zones.html
 
 ## Tax addresses
 
@@ -76,7 +78,7 @@ Spree::Config[:tax_using_ship_address] = true
 ### Use `Spree::TaxLocation` as the tax address
 
 An order's `tax_address` can – through [duck typing][duck-typing] – be a
-`Spree::TaxLocation` instead of the shipping address. The tax location is
+`Spree::Tax::TaxLocation` instead of the shipping address. The tax location is
 computed from the store's `Spree.config.cart_tax_country_iso` setting.
 
 Note that you can only trust the tax address if it has a country. The other

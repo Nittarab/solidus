@@ -67,12 +67,14 @@ describe "Homepage", type: :feature do
 
   context 'as fakedispatch user' do
     before do
-      allow_any_instance_of(Spree::Admin::BaseController).to receive(:spree_current_user).and_return(nil)
+      allow_any_instance_of(Spree::Admin::BaseController).to receive(:try_spree_current_user).and_return(nil)
     end
 
     custom_authorization! do |_user|
       can [:admin, :home], :dashboards
-      can [:admin, :edit, :index, :read], Spree::Order
+      can [:admin, :edit, :index, :show], Spree::Order
+      cannot [:admin], Spree::StockLocation
+      can [:admin], Spree::Zone
     end
 
     it 'should only display tabs fakedispatch has access to' do
@@ -80,7 +82,9 @@ describe "Homepage", type: :feature do
       expect(page).to have_link('Orders')
       expect(page).not_to have_link('Products')
       expect(page).not_to have_link('Promotions')
-      expect(page).not_to have_link('Settings')
+      expect(page).to have_link('Settings')
+      expect(page).not_to have_link('Stock Locations', visible: false)
+      expect(page).to have_link('Zones', visible: false)
     end
   end
 end

@@ -6,16 +6,12 @@ module Spree
     # shipped. If a carton contains items from multiple orders then this will be
     # called with that carton one time for each order.
     #
-    # @param carton [Spree::Carton] the shipped carton
-    # @param order [Spree::Order] one of the orders with items in the carton
-    # @param resend [Boolean] indicates whether the email is a 'resend' (e.g.
-    #        triggered by the admin "resend" button)
+    # @option options carton [Spree::Carton] the shipped carton
+    # @option options order [Spree::Order] one of the orders with items in the carton
+    # @option options resend [Boolean] indicates whether the email is a 'resend' (e.g.
+    #   triggered by the admin "resend" button)
     # @return [Mail::Message]
-    #
-    # Note: The signature of this method has changed. The new (non-deprecated)
-    # signature is:
-    #   def shipped_email(carton:, order:, resend: false)
-    def shipped_email(options, _deprecated_options = {})
+    def shipped_email(options)
       @order = options.fetch(:order)
       @carton = options.fetch(:carton)
       @manifest = @carton.manifest_for_order(@order)

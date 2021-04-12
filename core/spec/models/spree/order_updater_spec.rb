@@ -117,7 +117,7 @@ module Spree
               end
             end
 
-            Spree::Config.promotion_chooser_class = Spree::TestPromotionChooser
+            stub_spree_preferences(promotion_chooser_class: Spree::TestPromotionChooser)
           end
 
           it 'uses the defined promotion chooser' do
@@ -158,7 +158,8 @@ module Spree
                                 amount: -500,
                                 finalized: true,
                                 label: 'Some other credit')
-            line_item.adjustments.each { |a| a.update_column(:eligible, true) }
+
+            line_item.adjustments.each { |item| item.update_column(:eligible, true) }
 
             order.recalculate
 
@@ -172,7 +173,7 @@ module Spree
               create_adjustment('Promotion A', -200)
               create_adjustment('Promotion B', -200)
             end
-            line_item.adjustments.each { |a| a.update_column(:eligible, true) }
+            line_item.adjustments.each { |item| item.update_column(:eligible, true) }
 
             order.recalculate
 
@@ -186,7 +187,7 @@ module Spree
               create_adjustment('Promotion A', -200)
               create_adjustment('Promotion B', -200)
             end
-            line_item.adjustments.each { |a| a.update_column(:eligible, true) }
+            line_item.adjustments.each { |item| item.update_column(:eligible, true) }
 
             order.recalculate
 
@@ -322,7 +323,7 @@ module Spree
 
           before do
             order # generate this first so we can expect it
-            Spree::Config.tax_calculator_class = custom_calculator_class
+            stub_spree_preferences(tax_calculator_class: custom_calculator_class)
           end
 
           it 'uses the configured class' do
@@ -371,7 +372,7 @@ module Spree
     end
 
     context "updating payment state" do
-      let(:order) { Order.new }
+      let(:order) { build(:order) }
       let(:updater) { order.updater }
       before { allow(order).to receive(:refund_total).and_return(0) }
 
@@ -513,15 +514,10 @@ module Spree
 
       it "doesnt update each shipment" do
         shipment = stub_model(Spree::Shipment)
-        shipments = [shipment]
-        allow(order).to receive_messages shipments: shipments
-        allow(shipments).to receive_messages states: []
-        allow(shipments).to receive_messages ready: []
-        allow(shipments).to receive_messages pending: []
-        allow(shipments).to receive_messages shipped: []
-
+        order.shipments = [shipment]
+        allow(order.shipments).to receive_messages(states: [], ready: [], pending: [], shipped: [])
         allow(updater).to receive(:update_totals) # Otherwise this gets called and causes a scene
-        expect(updater).not_to receive(:update_shipments).with(order)
+        expect(updater).not_to receive(:update_shipments)
         updater.update
       end
     end
@@ -554,6 +550,33 @@ module Spree
         expect {
           order.recalculate
         }.to change { line_item.reload.adjustment_total }.from(100).to(0)
+      end
+    end
+
+    context "with 'order_recalculated' event subscription" do
+      let(:item) { spy('object') }
+
+      let!(:event) do
+        Spree::Event.subscribe :order_recalculated do
+          item.do_something
+        end
+      end
+
+      after { Spree::Event.unsubscribe event }
+
+      it "fires the 'order_recalculated' event" do
+        order.recalculate
+
+        expect(item).to have_received(:do_something)
+      end
+    end
+
+    context "with invalid associated objects" do
+      let(:order) { Spree::Order.create(ship_address: Spree::Address.new) }
+      subject { updater.update }
+
+      it "raises because of the invalid object" do
+        expect { subject }.to raise_error(ActiveRecord::RecordInvalid)
       end
     end
   end

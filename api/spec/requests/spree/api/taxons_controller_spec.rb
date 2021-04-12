@@ -4,16 +4,14 @@ require 'spec_helper'
 
 module Spree
   describe Api::TaxonsController, type: :request do
-    let(:taxonomy) { create(:taxonomy) }
-    let(:taxon) { create(:taxon, name: "Ruby", taxonomy: taxonomy) }
-    let(:taxon2) { create(:taxon, name: "Rails", taxonomy: taxonomy) }
+    let!(:taxonomy) { create(:taxonomy) }
+    let!(:taxon) { create(:taxon, name: "Ruby", parent: taxonomy.root, taxonomy: taxonomy) }
+    let!(:taxon2) { create(:taxon, name: "Rails", parent: taxon, taxonomy: taxonomy) }
+    let!(:rails_v3_2_2) { create(:taxon, name: "3.2.2", parent: taxon2, taxonomy: taxonomy) }
     let(:attributes) { ["id", "name", "pretty_name", "permalink", "parent_id", "taxonomy_id"] }
 
     before do
       stub_authentication!
-      taxon2.children << create(:taxon, name: "3.2.2", taxonomy: taxonomy)
-      taxon.children << taxon2
-      taxonomy.root.children << taxon
     end
 
     context "as a normal user" do
@@ -85,20 +83,29 @@ module Spree
         end
       end
 
+      context 'filtering by taxon ids' do
+        it 'returns only requested id' do
+          get spree.api_taxons_path, params: { ids: [rails_v3_2_2.id] }
+
+          expect(json_response['taxons'].size).to eq 1
+        end
+
+        it 'returns only requested ids' do
+          # We need a completly new branch to avoid having parent that can be preloaded from the rails ancestors
+          python   = create(:taxon, name: "Python", parent: taxonomy.root, taxonomy: taxonomy)
+          python_three = create(:taxon, name: "3.0", parent: python, taxonomy: taxonomy)
+
+          get spree.api_taxons_path, params: { ids: [rails_v3_2_2.id, python_three.id] }
+
+          expect(json_response['taxons'].size).to eq 2
+        end
+      end
+
       it "gets a single taxon" do
         get spree.api_taxonomy_taxon_path(taxonomy, taxon.id)
 
         expect(json_response['name']).to eq taxon.name
         expect(json_response['taxons'].count).to eq 1
-      end
-
-      it "gets all taxons in JSTree form" do
-        expect(Spree::Deprecation).to(receive(:warn))
-        get spree.jstree_api_taxonomy_taxon_path(taxonomy, taxon.id)
-        response = json_response.first
-        expect(response["data"]).to eq(taxon2.name)
-        expect(response["attr"]).to eq({ "name" => taxon2.name, "id" => taxon2.id })
-        expect(response["state"]).to eq("closed")
       end
 
       it "can learn how to create a new taxon" do
@@ -173,7 +180,7 @@ module Spree
       end
 
       it "cannot create a new taxon with invalid attributes" do
-        post spree.api_taxonomy_taxons_path(taxonomy), params: { taxon: { foo: :bar } }
+        post spree.api_taxonomy_taxons_path(taxonomy), params: { taxon: { name: '' } }
         expect(response.status).to eq(422)
         expect(json_response["error"]).to eq("Invalid resource. Please fix errors and try again.")
 

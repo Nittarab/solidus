@@ -16,22 +16,17 @@ module Spree
   #    order's adjustment total. This allows an adjustment to be preserved if
   #    it becomes ineligible so it might be reinstated.
   class Adjustment < Spree::Base
-    belongs_to :adjustable, polymorphic: true, touch: true
-    belongs_to :source, polymorphic: true
-    belongs_to :order, class_name: 'Spree::Order', inverse_of: :all_adjustments
-    belongs_to :promotion_code, class_name: 'Spree::PromotionCode'
-    belongs_to :adjustment_reason, class_name: 'Spree::AdjustmentReason', inverse_of: :adjustments
+    belongs_to :adjustable, polymorphic: true, touch: true, optional: true
+    belongs_to :source, polymorphic: true, optional: true
+    belongs_to :order, class_name: 'Spree::Order', inverse_of: :all_adjustments, optional: true
+    belongs_to :promotion_code, class_name: 'Spree::PromotionCode', optional: true
+    belongs_to :adjustment_reason, class_name: 'Spree::AdjustmentReason', inverse_of: :adjustments, optional: true
 
     validates :adjustable, presence: true
     validates :order, presence: true
     validates :label, presence: true
     validates :amount, numericality: true
     validates :promotion_code, presence: true, if: :require_promotion_code?
-
-    # We need to use `after_commit` here because otherwise it's too early to
-    # tell if any repair is needed.
-    after_commit :repair_adjustments_associations_on_create, on: [:create]
-    after_commit :repair_adjustments_associations_on_destroy, on: [:destroy]
 
     scope :not_finalized, -> { where(finalized: false) }
     scope :finalized, -> { where(finalized: true) }
@@ -56,20 +51,31 @@ module Spree
     extend DisplayMoney
     money_methods :amount
 
+    # Returns Adjustments of completed Orders.
+    #
+    # @param excluded_orders [Array<Spree::Order>] Orders to exclude from query
+    # @return [ActiveRecord::Relation] Scoped Adjustments
+    def self.in_completed_orders(excluded_orders: [])
+      joins(:order).
+      merge(Spree::Order.complete).
+      where.not(spree_orders: { id: excluded_orders }).
+      distinct
+    end
+
     def finalize!
-      update_attributes!(finalized: true)
+      update!(finalized: true)
     end
 
     def unfinalize!
-      update_attributes!(finalized: false)
+      update!(finalized: false)
     end
 
     def finalize
-      update_attributes(finalized: true)
+      update(finalized: true)
     end
 
     def unfinalize
-      update_attributes(finalized: false)
+      update(finalized: false)
     end
 
     def currency
@@ -124,15 +130,6 @@ module Spree
       amount
     end
 
-    def update!(*args)
-      if args.empty?
-        Spree::Deprecation.warn "Calling adjustment.update! with no arguments to recalculate amounts and eligibility is deprecated, since it conflicts with AR::Base#update! Please use adjustment.recalculate instead"
-        recalculate
-      else
-        super
-      end
-    end
-
     # Calculates based on attached promotion (if this is a promotion
     # adjustment) whether this promotion is still eligible.
     # @api private
@@ -148,21 +145,7 @@ module Spree
     private
 
     def require_promotion_code?
-      promotion? && source.promotion.codes.any?
-    end
-
-    def repair_adjustments_associations_on_create
-      if adjustable.adjustments.loaded? && !adjustable.adjustments.include?(self) && !destroyed?
-        Spree::Deprecation.warn("Adjustment #{id} was not added to #{adjustable.class} #{adjustable.id}. Add adjustments via `adjustable.adjustments.create!`. Partial call stack: #{caller.select { |line| line =~ %r(/(app|spec)/) }}.", caller)
-        adjustable.adjustments.proxy_association.add_to_target(self)
-      end
-    end
-
-    def repair_adjustments_associations_on_destroy
-      if adjustable.adjustments.loaded? && adjustable.adjustments.include?(self)
-        Spree::Deprecation.warn("Adjustment #{id} was not removed from #{adjustable.class} #{adjustable.id}. Remove adjustments via `adjustable.adjustments.destroy`. Partial call stack: #{caller.select { |line| line =~ %r(/(app|spec)/) }}.", caller)
-        adjustable.adjustments.proxy_association.target.delete(self)
-      end
+      promotion? && !source.promotion.apply_automatically && source.promotion.codes.any?
     end
   end
 end

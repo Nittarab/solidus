@@ -9,10 +9,9 @@ module Spree
 
       rescue_from Spree::Order::InsufficientStock, with: :insufficient_stock_error
 
-      include Spree::Core::ControllerHelpers::Order
-
-      # TODO: Remove this after deprecated usage in #update is removed
       include Spree::Core::ControllerHelpers::PaymentParameters
+
+      include Spree::Core::ControllerHelpers::Order
 
       def next
         authorize! :update, @order, order_token
@@ -20,12 +19,8 @@ module Spree
           respond_with(@order, default_template: 'spree/api/orders/expected_total_mismatch', status: 400)
           return
         end
-        authorize! :update, @order, order_token
         @order.next!
         respond_with(@order, default_template: 'spree/api/orders/show', status: 200)
-      rescue StateMachines::InvalidTransition => e
-        logger.error("invalid_transition #{e.event} from #{e.from} for #{e.object.class.name}. Error: #{e.inspect}")
-        respond_with(@order, default_template: 'spree/api/orders/could_not_transition', status: 422)
       end
 
       def advance
@@ -42,9 +37,6 @@ module Spree
           @order.complete!
           respond_with(@order, default_template: 'spree/api/orders/show', status: 200)
         end
-      rescue StateMachines::InvalidTransition => e
-        logger.error("invalid_transition #{e.event} from #{e.from} for #{e.object.class.name}. Error: #{e.inspect}")
-        respond_with(@order, default_template: 'spree/api/orders/could_not_transition', status: 422)
       end
 
       def update
@@ -57,12 +49,9 @@ module Spree
 
           return if after_update_attributes
 
-          if @order.completed? || @order.next
+          if @order.completed? || @order.next!
             state_callback(:after)
             respond_with(@order, default_template: 'spree/api/orders/show')
-          else
-            logger.error("failed_to_transition_errors=#{@order.errors.full_messages}")
-            respond_with(@order, default_template: 'spree/api/orders/could_not_transition', status: 422)
           end
         else
           invalid_resource!(@order)
@@ -76,11 +65,24 @@ module Spree
       end
 
       def update_params
-        if update_params = massaged_params[:order]
-          update_params.permit(permitted_checkout_attributes)
+        state = @order.state
+        case state.to_sym
+        when :cart, :address
+          massaged_params.fetch(:order, {}).permit(
+            permitted_checkout_address_attributes
+          )
+        when :delivery
+          massaged_params.require(:order).permit(
+            permitted_checkout_delivery_attributes
+          )
+        when :payment
+          massaged_params.require(:order).permit(
+            permitted_checkout_payment_attributes
+          )
         else
-          # We current allow update requests without any parameters in them.
-          {}
+          massaged_params.fetch(:order, {}).permit(
+            permitted_checkout_confirm_attributes
+          )
         end
       end
 
@@ -92,7 +94,7 @@ module Spree
         massaged_params
       end
 
-      # Should be overriden if you have areas of your checkout that don't match
+      # Should be overridden if you have areas of your checkout that don't match
       # up to a step within checkout_steps, such as a registration step
       def skip_state_validation?
         false
@@ -113,16 +115,6 @@ module Spree
       end
 
       def after_update_attributes
-        if params[:order] && params[:order][:coupon_code].present?
-          handler = PromotionHandler::Coupon.new(@order)
-          handler.apply
-
-          if handler.error.present?
-            @coupon_message = handler.error
-            respond_with(@order, default_template: 'spree/api/orders/could_not_apply_coupon', status: 422)
-            return true
-          end
-        end
         false
       end
 

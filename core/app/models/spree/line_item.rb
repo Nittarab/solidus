@@ -4,17 +4,15 @@ module Spree
   # Variants placed in the Order at a particular price.
   #
   # `Spree::LineItem` is an ActiveRecord model which records which `Spree::Variant`
-  # a customer has chosen to place in their order. It also acts as the permenent
+  # a customer has chosen to place in their order. It also acts as the permanent
   # record of the customer's order by recording relevant price, taxation, and inventory
   # concerns. Line items can also have adjustments placed on them as part of the
   # promotion system.
   #
   class LineItem < Spree::Base
-    class CurrencyMismatch < StandardError; end
-
-    belongs_to :order, class_name: "Spree::Order", inverse_of: :line_items, touch: true
-    belongs_to :variant, -> { with_deleted }, class_name: "Spree::Variant", inverse_of: :line_items
-    belongs_to :tax_category, class_name: "Spree::TaxCategory"
+    belongs_to :order, class_name: "Spree::Order", inverse_of: :line_items, touch: true, optional: true
+    belongs_to :variant, -> { with_discarded }, class_name: "Spree::Variant", inverse_of: :line_items, optional: true
+    belongs_to :tax_category, class_name: "Spree::TaxCategory", optional: true
 
     has_one :product, through: :variant
 
@@ -33,6 +31,7 @@ module Spree
       greater_than: -1
     }
     validates :price, numericality: true
+    validate :price_match_order_currency
 
     after_save :update_inventory
 
@@ -42,7 +41,7 @@ module Spree
     delegate :name, :description, :sku, :should_track_inventory?, to: :variant
     delegate :currency, to: :order, allow_nil: true
 
-    attr_accessor :target_shipment
+    attr_accessor :target_shipment, :price_currency
 
     self.whitelisted_ransackable_associations = ['variant']
     self.whitelisted_ransackable_attributes = ['variant_id']
@@ -55,24 +54,15 @@ module Spree
     alias subtotal amount
 
     # @return [BigDecimal] the amount of this line item, taking into
-    #   consideration line item promotions.
-    def discounted_amount
-      amount + promo_total
-    end
-    deprecate discounted_amount: :total_before_tax, deprecator: Spree::Deprecation
-
-    # @return [BigDecimal] the amount of this line item, taking into
     #   consideration all its adjustments.
     def total
       amount + adjustment_total
     end
-    alias final_amount total
-    deprecate final_amount: :total, deprecator: Spree::Deprecation
 
     # @return [BigDecimal] the amount of this item, taking into consideration
     #   all non-tax adjustments.
     def total_before_tax
-      amount + adjustments.select { |a| !a.tax? && a.eligible? }.sum(&:amount)
+      amount + adjustments.select { |value| !value.tax? && value.eligible? }.sum(&:amount)
     end
 
     # @return [BigDecimal] the amount of this line item before VAT tax
@@ -80,20 +70,11 @@ module Spree
     def total_excluding_vat
       total_before_tax - included_tax_total
     end
-    alias pre_tax_amount total_excluding_vat
-    deprecate pre_tax_amount: :total_excluding_vat, deprecator: Spree::Deprecation
 
     extend Spree::DisplayMoney
-    money_methods :amount, :discounted_amount, :price,
+    money_methods :amount, :price,
                   :included_tax_total, :additional_tax_total,
                   :total, :total_before_tax, :total_excluding_vat
-    deprecate display_discounted_amount: :display_total_before_tax, deprecator: Spree::Deprecation
-    alias display_final_amount display_total
-    deprecate display_final_amount: :display_total, deprecator: Spree::Deprecation
-    alias display_pre_tax_amount display_total_excluding_vat
-    deprecate display_pre_tax_amount: :display_total_excluding_vat, deprecator: Spree::Deprecation
-    alias discounted_money display_discounted_amount
-    deprecate discounted_money: :display_total_before_tax, deprecator: Spree::Deprecation
 
     # @return [Spree::Money] the price of this line item
     alias money_price display_price
@@ -102,8 +83,6 @@ module Spree
 
     # @return [Spree::Money] the amount of this line item
     alias money display_amount
-    alias display_total display_amount
-    deprecate display_total: :display_amount, deprecator: Spree::Deprecation
 
     # Sets price from a `Spree::Money` object
     #
@@ -111,9 +90,8 @@ module Spree
     def money_price=(money)
       if !money
         self.price = nil
-      elsif money.currency.iso_code != currency
-        raise CurrencyMismatch, "Line item price currency must match order currency!"
       else
+        self.price_currency = money.currency.iso_code
         self.price = money.to_d
       end
     end
@@ -153,12 +131,6 @@ module Spree
       Spree::Config.pricing_options_class.from_line_item(self)
     end
 
-    def currency=(_currency)
-      Spree::Deprecation.warn 'Spree::LineItem#currency= is deprecated ' \
-        'and will take no effect.',
-        caller
-    end
-
     private
 
     # Sets the quantity to zero if it is nil or less than zero.
@@ -174,23 +146,11 @@ module Spree
       set_pricing_attributes
     end
 
-    # Set price, cost_price and currency. This method used to be called #copy_price, but actually
-    # did more than just setting the price, hence renamed to #set_pricing_attributes
+    # Set price, cost_price and currency.
     def set_pricing_attributes
-      # If the legacy method #copy_price has been overridden, handle that gracefully
-      return handle_copy_price_override if respond_to?(:copy_price)
-
       self.cost_price ||= variant.cost_price
       self.money_price = variant.price_for(pricing_options) if price.nil?
       true
-    end
-
-    def handle_copy_price_override
-      copy_price
-      Spree::Deprecation.warn 'You have overridden Spree::LineItem#copy_price. ' \
-        'This method is now called Spree::LineItem#set_pricing_attributes. ' \
-        'Please adjust your override.',
-        caller
     end
 
     def update_inventory
@@ -201,6 +161,12 @@ module Spree
 
     def destroy_inventory_units
       inventory_units.destroy_all
+    end
+
+    def price_match_order_currency
+      return if price_currency.blank? || price_currency == currency
+
+      errors.add(:price, :does_not_match_order_currency)
     end
   end
 end

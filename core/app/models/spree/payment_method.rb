@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'discard'
+require 'spree/preferences/persistable'
 require 'spree/preferences/statically_configurable'
 
 module Spree
@@ -12,25 +12,14 @@ module Spree
   # This class is not meant to be instantiated. Please create instances of concrete payment methods.
   #
   class PaymentMethod < Spree::Base
+    include Spree::Preferences::Persistable
+
     preference :server, :string, default: 'test'
     preference :test_mode, :boolean, default: true
 
-    acts_as_paranoid
-    include Spree::ParanoiaDeprecations
-
-    include Discard::Model
-    self.discard_column = :deleted_at
+    include Spree::SoftDeletable
 
     acts_as_list
-
-    # @private
-    def self.const_missing(name)
-      if name == :DISPLAY
-        const_set(:DISPLAY, [:both, :front_end, :back_end])
-      else
-        super
-      end
-    end
 
     validates :name, :type, presence: true
 
@@ -63,55 +52,13 @@ module Spree
           @human
         ].compact
         options = { scope: [:activerecord, :models], count: 1, default: defaults }.merge!(options.except(:default))
-        I18n.translate(defaults.shift, options)
+        I18n.translate(defaults.shift, **options)
       end
     end
 
     class << self
-      # @deprecated Use Spree::Config.environment.payment_methods instead
-      def providers
-        Spree::Deprecation.warn 'Spree::PaymentMethod.providers is deprecated and will be deleted in Solidus 3.0. ' \
-          'Please use Rails.application.config.spree.payment_methods instead'
-        Spree::Config.environment.payment_methods
-      end
-
-      # @deprecated Use {.active}, {.available_to_users}, and {.available_to_admin} scopes instead.
-      def available(display_on = nil, store: nil)
-        Spree::Deprecation.warn "Spree::PaymentMethod.available is deprecated."\
-          "Please use .active, .available_to_users, and .available_to_admin scopes instead."\
-          "For payment methods associated with a specific store, use Spree::PaymentMethod.available_to_store(your_store)"\
-          " as the base applying any further filtering"
-
-        display_on = display_on.to_s
-
-        available_payment_methods =
-          case display_on
-          when 'front_end'
-            active.available_to_users
-          when 'back_end'
-            active.available_to_admin
-          else
-            active.available_to_users.available_to_admin
-          end
-        available_payment_methods.select do |p|
-          store.nil? || store.payment_methods.empty? || store.payment_methods.include?(p)
-        end
-      end
-
       def model_name
         ModelName.new(self, Spree)
-      end
-
-      # @deprecated Use .active.any? instead
-      def active?
-        Spree::Deprecation.warn "#{self}.active? is deprecated. Use #{self}.active.any? instead"
-        where(type: to_s, active: true).count > 0
-      end
-
-      # @deprecated Use .with_deleted.find instead
-      def find_with_destroyed(*args)
-        Spree::Deprecation.warn "#{self}.find_with_destroyed is deprecated. Use #{self}.with_deleted.find instead"
-        unscoped { find(*args) }
       end
     end
 
@@ -130,13 +77,15 @@ module Spree
     def gateway
       gateway_options = options
       gateway_options.delete :login if gateway_options.key?(:login) && gateway_options[:login].nil?
-      if gateway_options[:server]
-        ActiveMerchant::Billing::Base.mode = gateway_options[:server].to_sym
-      end
+
+      # All environments except production considered to be test
+      test_server = gateway_options[:server] != 'production'
+      test_mode = gateway_options[:test_mode]
+
+      gateway_options[:test] = (test_server || test_mode)
+
       @gateway ||= gateway_class.new(gateway_options)
     end
-    alias_method :provider, :gateway
-    deprecate provider: :gateway, deprecator: Spree::Deprecation
 
     # Represents all preferences as a Hash
     #
@@ -156,29 +105,6 @@ module Spree
       raise ::NotImplementedError, "You must implement payment_source_class method for #{self.class}."
     end
 
-    # @deprecated Use {Spree::PaymentMethod#available_to_users=} and {Spree::PaymentMethod#available_to_admin=} instead
-    def display_on=(value)
-      Spree::Deprecation.warn "Spree::PaymentMethod#display_on= is deprecated."\
-        "Please use #available_to_users= and #available_to_admin= instead."
-      self.available_to_users = value.blank? || value == 'front_end'
-      self.available_to_admin = value.blank? || value == 'back_end'
-    end
-
-    # @deprecated Use {Spree::PaymentMethod#available_to_users} and {Spree::PaymentMethod#available_to_admin} instead
-    def display_on
-      Spree::Deprecation.warn "Spree::PaymentMethod#display_on is deprecated."\
-        "Please use #available_to_users and #available_to_admin instead."
-      if available_to_users? && available_to_admin?
-        ''
-      elsif available_to_users?
-        'front_end'
-      elsif available_to_admin?
-        'back_end'
-      else
-        'none'
-      end
-    end
-
     # Used as partial name for your payment method
     #
     # Currently your payment method needs to provide these partials:
@@ -195,22 +121,11 @@ module Spree
     #     4. app/views/spree/admin/payments/source_views/_{partial_name}.html.erb
     #     The view that represents your payment method on orders in the backend
     #
+    #     5. app/views/spree/api/payments/source_views/_{partial_name}.json.jbuilder
+    #     The view that represents your payment method on orders through the api
+    #
     def partial_name
-      deprecated_method_type_override || type.demodulize.downcase
-    end
-
-    # :nodoc:
-    # If method_type has been overridden, call it and return the value, otherwise return nil
-    def deprecated_method_type_override
-      if method(:method_type).owner != Spree::PaymentMethod
-        Spree::Deprecation.warn "#{method(:method_type).owner} is overriding PaymentMethod#method_type. This is deprecated and will be removed from Solidus 3.0 (override partial_name instead).", caller[1..-1]
-        method_type
-      end
-    end
-
-    def method_type
-      Spree::Deprecation.warn "method_type is deprecated and will be removed from Solidus 3.0 (use partial_name instead)", caller
-      partial_name
+      type.demodulize.underscore
     end
 
     def payment_profiles_supported?
@@ -268,14 +183,7 @@ module Spree
     # Represents the gateway class of this payment method
     #
     def gateway_class
-      if respond_to? :provider_class
-        Spree::Deprecation.warn \
-          "provider_class is deprecated and will be removed from Solidus 3.0 " \
-          "(use gateway_class instead)"
-        public_send :provider_class
-      else
-        raise ::NotImplementedError, "You must implement gateway_class method for #{self.class}."
-      end
+      raise ::NotImplementedError, "You must implement gateway_class method for #{self.class}."
     end
   end
 end

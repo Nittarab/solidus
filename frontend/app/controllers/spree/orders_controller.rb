@@ -10,12 +10,11 @@ module Spree
     before_action :assign_order, only: :update
     # note: do not lock the #edit action because that's where we redirect when we fail to acquire a lock
     around_action :lock_order, only: :update
-    before_action :apply_coupon_code, only: :update
     skip_before_action :verify_authenticity_token, only: [:populate]
 
     def show
       @order = Spree::Order.find_by!(number: params[:id])
-      authorize! :read, @order, cookies.signed[:guest_token]
+      authorize! :show, @order, cookies.signed[:guest_token]
     end
 
     def update
@@ -39,9 +38,13 @@ module Spree
 
     # Shows the current incomplete order from the session
     def edit
-      @order = current_order || Spree::Order.incomplete.find_or_initialize_by(guest_token: cookies.signed[:guest_token])
-      authorize! :read, @order, cookies.signed[:guest_token]
+      @order = current_order(build_order_if_necessary: true)
+      authorize! :edit, @order, cookies.signed[:guest_token]
       associate_user
+      if params[:id] && @order.number != params[:id]
+        flash[:error] = t('spree.cannot_edit_orders')
+        redirect_to cart_path
+      end
     end
 
     # Adds a new item to the order (creating a new order if none already exists)
@@ -55,12 +58,12 @@ module Spree
       # 2,147,483,647 is crazy. See issue https://github.com/spree/spree/issues/2695.
       if !quantity.between?(1, 2_147_483_647)
         @order.errors.add(:base, t('spree.please_enter_reasonable_quantity'))
-      end
-
-      begin
-        @line_item = @order.contents.add(variant, quantity)
-      rescue ActiveRecord::RecordInvalid => e
-        @order.errors.add(:base, e.record.errors.full_messages.join(", "))
+      else
+        begin
+          @line_item = @order.contents.add(variant, quantity)
+        rescue ActiveRecord::RecordInvalid => error
+          @order.errors.add(:base, error.record.errors.full_messages.join(", "))
+        end
       end
 
       respond_with(@order) do |format|
@@ -117,21 +120,6 @@ module Spree
       unless @order
         flash[:error] = t('spree.order_not_found')
         redirect_to(root_path) && return
-      end
-    end
-
-    def apply_coupon_code
-      if order_params[:coupon_code].present?
-        @order.coupon_code = order_params[:coupon_code]
-
-        handler = PromotionHandler::Coupon.new(@order).apply
-
-        if handler.error.present?
-          flash.now[:error] = handler.error
-          respond_with(@order) { |format| format.html { render :edit } } && return
-        elsif handler.success
-          flash[:success] = handler.success
-        end
       end
     end
   end

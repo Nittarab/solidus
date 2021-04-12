@@ -4,7 +4,9 @@ require 'spec_helper'
 
 module Spree
   describe 'Api Feature Specs', type: :request do
-    before { Spree::Api::Config[:requires_authentication] = false }
+    before do
+      stub_spree_preferences(Spree::Api::Config, requires_authentication: false)
+    end
     let!(:promotion) { FactoryBot.create(:promotion, :with_order_adjustment, code: 'foo', weighted_order_adjustment_amount: 10) }
     let(:promotion_code) { promotion.codes.first }
     let!(:store) { FactoryBot.create(:store) }
@@ -62,7 +64,7 @@ module Spree
 
     def add_promotion(_promotion)
       expect {
-        put "/api/orders/#{@order.number}/apply_coupon_code",
+        post "/api/orders/#{@order.number}/coupon_codes",
           params: { coupon_code: promotion_code.value }
       }.to change { @order.promotions.count }.by 1
       expect(response).to have_http_status(:ok)
@@ -73,7 +75,7 @@ module Spree
       # It seems we are missing an order-scoped address api endpoint since we need
       # to use update here.
       expect {
-        update_order(order_params: { order: { address_type => address.attributes.except('id') } })
+        update_order(order_params: { order: { address_type => address.as_json.except('id') } })
       }.to change { @order.reload.public_send(address_type) }.to address
     end
 
@@ -143,10 +145,6 @@ module Spree
             0 => { variant_id: variant_1.id, quantity: 2 },
             1 => { variant_id: variant_2.id, quantity: 2 }
           },
-          # Would like to do this, but the save process from the orders controller
-          # does not actually call what it needs to to apply this coupon code :(
-          # coupon_code: promotion.code,
-
           # Would like to do this, but it puts the payment in a complete state,
           # which the order does not like when transitioning from confirm to complete
           # since it looks to process pending payments.
@@ -175,10 +173,6 @@ module Spree
             0 => { variant_id: variant_1.id, quantity: 2 },
             1 => { variant_id: variant_2.id, quantity: 2 }
           },
-          # Would like to do this, but the save process from the orders controller
-          # does not actually call what it needs to to apply this coupon code :(
-          # coupon_code: promotion.code,
-
           # Would like to do this, but it puts the payment in a complete state,
           # which the order does not like when transitioning from confirm to complete
           # since it looks to process pending payments.

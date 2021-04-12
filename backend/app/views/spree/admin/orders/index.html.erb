@@ -7,7 +7,7 @@
   <li>
     <%= link_to t('spree.new_order'), new_admin_order_url, id: 'admin_new_order', class: 'btn btn-primary' %>
   </li>
-<% end if can? :create, Spree::Order %>
+<% end if can? :manage, Spree::Order %>
 
 <% content_for :table_filter_title do %>
   <%= t('spree.filter') %>
@@ -66,12 +66,8 @@
 
             <div class="col-12 col-xl-6">
               <div class="field">
-                <%= label_tag :q_bill_address_firstname_start, t('spree.first_name_begins_with') %>
-                <%= f.text_field :bill_address_firstname_start, size: 25 %>
-              </div>
-              <div class="field">
-                <%= label_tag :q_bill_address_lastname_start, t('spree.last_name_begins_with') %>
-                <%= f.text_field :bill_address_lastname_start, size: 25%>
+                <%= label_tag :q_bill_address_name_start, t('spree.name_contains') %>
+                <%= f.text_field :bill_address_name_start, size: 25 %>
               </div>
             </div>
 
@@ -177,8 +173,9 @@
           <% if order.user %>
             <%= link_to order.email, edit_admin_user_path(order.user) %>
           <% else %>
-            <%= mail_to order.email %>
+            <%= order.email %>
           <% end %>
+          <%= link_to_with_icon('email', t('spree.actions.send_email'), "mailto:#{order.email}", no_text: true) %>
         </td>
         <td class="align-right"><%= order.display_total.to_html %></td>
         <td class='actions align-center' data-hook="admin_orders_index_row_actions">
@@ -190,9 +187,11 @@
   </table>
 <% else %>
   <div class="no-objects-found">
-    <%= render 'spree/admin/shared/no_objects_found',
-                 resource: Spree::Order,
-                 new_resource_url: spree.new_admin_order_path %>
+    <% if can? :manage, Spree::Order %>
+      <%= render 'spree/admin/shared/no_objects_found',
+                   resource: Spree::Order,
+                   new_resource_url: spree.new_admin_order_path %>
+    <% end %>
   </div>
 <% end %>
 

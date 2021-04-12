@@ -38,7 +38,7 @@ module Spree
       end
 
       def update
-        if @user.update_attributes(user_params)
+        if @user.update(user_params)
           set_roles
           set_stock_locations
 
@@ -55,7 +55,7 @@ module Spree
 
       def addresses
         if request.put?
-          if @user.update_attributes(user_params)
+          if @user.update(user_params)
             flash.now[:success] = t('spree.account_updated')
           end
 
@@ -71,26 +71,14 @@ module Spree
 
       def items
         params[:q] ||= {}
+
         @search = Spree::Order.includes(
           line_items: {
             variant: [:product, { option_values: :option_type }]
           }
 ).ransack(params[:q].merge(user_id_eq: @user.id))
+
         @orders = @search.result.page(params[:page]).per(Spree::Config[:admin_products_per_page])
-      end
-
-      def generate_api_key
-        if @user.generate_spree_api_key!
-          flash[:success] = t('spree.api.key_generated')
-        end
-        redirect_to edit_admin_user_path(@user)
-      end
-
-      def clear_api_key
-        if @user.clear_spree_api_key!
-          flash[:success] = t('spree.api.key_cleared')
-        end
-        redirect_to edit_admin_user_path(@user)
       end
 
       def model_class
@@ -101,21 +89,11 @@ module Spree
 
       def collection
         return @collection if @collection
-        if request.xhr? && params[:q].present?
-          @collection = Spree.user_class.includes(:bill_address, :ship_address)
-                            .where("#{Spree.user_class.table_name}.email #{LIKE} :search
-                                   OR (spree_addresses.firstname #{LIKE} :search AND spree_addresses.id = #{Spree.user_class.table_name}.bill_address_id)
-                                   OR (spree_addresses.lastname  #{LIKE} :search AND spree_addresses.id = #{Spree.user_class.table_name}.bill_address_id)
-                                   OR (spree_addresses.firstname #{LIKE} :search AND spree_addresses.id = #{Spree.user_class.table_name}.ship_address_id)
-                                   OR (spree_addresses.lastname  #{LIKE} :search AND spree_addresses.id = #{Spree.user_class.table_name}.ship_address_id)",
-                                  { search: "#{params[:q].strip}%" })
-                            .limit(params[:limit] || 100)
-        else
-          @search = Spree.user_class.ransack(params[:q])
-          @collection = @search.result.includes(:spree_roles)
-          @collection = @collection.includes(:spree_orders)
-          @collection = @collection.page(params[:page]).per(Spree::Config[:admin_products_per_page])
-        end
+
+        @search = super.ransack(params[:q])
+        @collection = @search.result.includes(:spree_roles)
+        @collection = @collection.includes(:spree_orders)
+        @collection = @collection.page(params[:page]).per(Spree::Config[:admin_products_per_page])
       end
 
       def user_params
@@ -127,6 +105,14 @@ module Spree
 
         if can? :manage, Spree::Role
           attributes += [{ spree_role_ids: [] }]
+        end
+
+        if can? :manage, Spree::StockLocation
+          attributes += [{ stock_location_ids: [] }]
+        end
+
+        unless can? :update_password, @user
+          attributes -= [:password, :password_confirmation]
         end
 
         params.require(:user).permit(attributes)
@@ -145,24 +131,27 @@ module Spree
       end
 
       def load_roles
-        @roles = Spree::Role.all
+        @roles = Spree::Role.accessible_by(current_ability)
         if @user
           @user_roles = @user.spree_roles
         end
       end
 
       def load_stock_locations
-        @stock_locations = Spree::StockLocation.all
+        @stock_locations = Spree::StockLocation.accessible_by(current_ability)
       end
 
       def set_roles
-        if user_params[:spree_role_ids] && can?(:manage, Spree::Role)
-          @user.spree_roles = Spree::Role.where(id: user_params[:spree_role_ids])
+        if user_params[:spree_role_ids]
+          @user.spree_roles = Spree::Role.accessible_by(current_ability).where(id: user_params[:spree_role_ids])
         end
       end
 
       def set_stock_locations
-        @user.stock_locations = Spree::StockLocation.where(id: (params[:user][:stock_location_ids] || []))
+        if user_params[:stock_location_ids]
+          @user.stock_locations =
+            Spree::StockLocation.accessible_by(current_ability).where(id: user_params[:stock_location_ids])
+        end
       end
     end
   end

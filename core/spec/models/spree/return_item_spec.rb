@@ -2,17 +2,17 @@
 
 require 'rails_helper'
 
-RSpec.shared_examples "an invalid state transition" do |status, expected_status|
-  let(:status) { status }
-
-  it "cannot transition to #{expected_status}" do
-    expect { subject }.to raise_error(StateMachines::InvalidTransition)
-  end
-end
-
 RSpec.describe Spree::ReturnItem, type: :model do
   all_reception_statuses = Spree::ReturnItem.state_machines[:reception_status].states.map(&:name).map(&:to_s)
   all_acceptance_statuses = Spree::ReturnItem.state_machines[:acceptance_status].states.map(&:name).map(&:to_s)
+
+  shared_examples "an invalid state transition" do |status, expected_status|
+    let(:status) { status }
+
+    it "cannot transition to #{expected_status}" do
+      expect { subject }.to raise_error(StateMachines::InvalidTransition)
+    end
+  end
 
   before do
     allow_any_instance_of(Spree::Order).to receive(:return!).and_return(true)
@@ -26,8 +26,8 @@ RSpec.describe Spree::ReturnItem, type: :model do
     let(:return_item) { create(:return_item, inventory_unit: inventory_unit) }
 
     before do
-      inventory_unit.update_attributes!(state: 'shipped')
-      return_item.update_attributes!(reception_status: 'awaiting')
+      inventory_unit.update!(state: 'shipped')
+      return_item.update!(reception_status: 'awaiting')
       allow(return_item).to receive(:eligible_for_return?).and_return(true)
     end
 
@@ -82,9 +82,9 @@ RSpec.describe Spree::ReturnItem, type: :model do
       let(:stock_item) { stock_location.stock_item(inventory_unit.variant) }
 
       before do
-        inventory_unit.update_attributes!(state: 'shipped')
-        return_item.update_attributes!(reception_status: 'awaiting')
-        stock_location.update_attributes!(restock_inventory: true)
+        inventory_unit.update!(state: 'shipped')
+        return_item.update!(reception_status: 'awaiting')
+        stock_location.update!(restock_inventory: true)
       end
 
       it 'increases the count on hand' do
@@ -93,9 +93,9 @@ RSpec.describe Spree::ReturnItem, type: :model do
 
       context 'when variant does not track inventory' do
         before do
-          inventory_unit.update_attributes!(state: 'shipped')
-          inventory_unit.variant.update_attributes!(track_inventory: false)
-          return_item.update_attributes!(reception_status: 'awaiting')
+          inventory_unit.update!(state: 'shipped')
+          inventory_unit.variant.update!(track_inventory: false)
+          return_item.update!(reception_status: 'awaiting')
         end
 
         it 'does not increase the count on hand' do
@@ -105,7 +105,7 @@ RSpec.describe Spree::ReturnItem, type: :model do
 
       context "when the stock location's restock_inventory is false" do
         before do
-          stock_location.update_attributes!(restock_inventory: false)
+          stock_location.update!(restock_inventory: false)
         end
 
         it 'does not increase the count on hand' do
@@ -114,7 +114,7 @@ RSpec.describe Spree::ReturnItem, type: :model do
       end
 
       context "when the inventory unit's variant does not yet have a stock item for the stock location it was returned to" do
-        before { inventory_unit.variant.stock_items.each(&:really_destroy!) }
+        before { inventory_unit.variant.stock_items.each(&:destroy) }
 
         it "creates a new stock item for the inventory unit with a count of 1" do
           expect { subject }.to change(Spree::StockItem, :count).by(1)
@@ -126,7 +126,7 @@ RSpec.describe Spree::ReturnItem, type: :model do
 
       Spree::ReturnItem::INTERMEDIATE_RECEPTION_STATUSES.each do |status|
         context "when the item was #{status}" do
-          before { return_item.update_attributes!(reception_status: status) }
+          before { return_item.update!(reception_status: status) }
 
           it 'processes the inventory unit' do
             subject
@@ -213,6 +213,35 @@ RSpec.describe Spree::ReturnItem, type: :model do
     it "starts off in the awaiting state" do
       expect(return_item).to be_awaiting
     end
+
+    context 'when transitioning to :received' do
+      let(:return_item) { create(:return_item) }
+      subject { return_item.receive! }
+
+      # StateMachines has some "smart" code for guessing how many arguments to
+      # send to the callback methods that interferes with rspec-mocks.
+      around { |e| without_partial_double_verification { e.call } }
+
+      it 'calls #attempt_accept, #check_unexchange, and #process_inventory_unit!' do
+        expect(return_item).to receive(:attempt_accept)
+        expect(return_item).to receive(:check_unexchange)
+        expect(return_item).to receive(:process_inventory_unit!)
+
+        subject
+      end
+
+      context 'when the :acceptance_status is in a state that does not support the :attempt_accept event' do
+        before { return_item.require_manual_intervention! }
+
+        it 'only skips the call to :attempt_accept' do
+          expect(return_item).not_to receive(:attempt_accept)
+          expect(return_item).to receive(:check_unexchange)
+          expect(return_item).to receive(:process_inventory_unit!)
+
+          subject
+        end
+      end
+    end
   end
 
   describe "acceptance_status state_machine" do
@@ -284,7 +313,7 @@ RSpec.describe Spree::ReturnItem, type: :model do
       subject { return_item.public_send("#{transition}!") }
       context "awaiting status" do
         before do
-          return_item.update_attributes!(reception_status: 'awaiting')
+          return_item.update!(reception_status: 'awaiting')
           allow(return_item).to receive(:eligible_for_return?).and_return(true)
         end
 
@@ -294,7 +323,7 @@ RSpec.describe Spree::ReturnItem, type: :model do
         end
 
         it 'does not decrease inventory' do
-          expect(return_item).to_not receive(:process_inventory_unit)
+          expect(return_item).to_not receive(:process_inventory_unit!)
           subject
         end
 

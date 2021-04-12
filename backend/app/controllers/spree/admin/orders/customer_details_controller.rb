@@ -13,7 +13,8 @@ module Spree
         end
 
         def edit
-          country_id = Spree::Country.default.id
+          country_id = default_country_id
+
           @order.build_bill_address(country_id: country_id) if @order.bill_address.nil?
           @order.build_ship_address(country_id: country_id) if @order.ship_address.nil?
 
@@ -43,6 +44,12 @@ module Spree
 
         private
 
+        def default_country_id
+          country_id = Spree::Country.default.id
+
+          country_id if Spree::Country.available.pluck(:id).include?(country_id)
+        end
+
         def order_params
           params.require(:order).permit(
             :email,
@@ -54,6 +61,8 @@ module Spree
 
         def load_order
           @order = Spree::Order.includes(:adjustments).find_by!(number: params[:order_id])
+        rescue ActiveRecord::RecordNotFound
+          resource_not_found(flash_class: Spree::Order, redirect_url: admin_orders_path)
         end
 
         def model_class

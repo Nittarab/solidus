@@ -4,16 +4,12 @@ require 'rails_helper'
 
 RSpec.describe Spree::Money do
   before do
-    configure_spree_preferences do |config|
-      config.currency = "USD"
-    end
+    stub_spree_preferences(currency: "USD")
   end
 
   describe '#initialize' do
     subject do
-      Spree::Deprecation.silence do
-        described_class.new(amount, currency: currency, with_currency: true).to_s
-      end
+      described_class.new(amount, currency: currency, with_currency: true).to_s
     end
 
     context 'with no currency' do
@@ -38,32 +34,6 @@ RSpec.describe Spree::Money do
 
       context "with no decimal point" do
         let(:amount){ '10' }
-        it { should == "$10.00 USD" }
-      end
-
-      context "with symbol" do
-        let(:amount){ '$10.00' }
-        it { should == "$10.00 USD" }
-      end
-
-      context "with extra currency" do
-        let(:amount){ '$10.00 USD' }
-        it { should == "$10.00 USD" }
-      end
-
-      context "with different currency" do
-        let(:currency){ 'USD' }
-        let(:amount){ '$10.00 CAD' }
-        it { should == "$10.00 CAD" }
-      end
-
-      context "with commas" do
-        let(:amount){ '1,000.00' }
-        it { should == "$1,000.00 USD" }
-      end
-
-      context "with comma for decimal point" do
-        let(:amount){ '10,00' }
         it { should == "$10.00 USD" }
       end
 
@@ -155,9 +125,7 @@ RSpec.describe Spree::Money do
 
   context "JPY" do
     before do
-      configure_spree_preferences do |config|
-        config.currency = "JPY"
-      end
+      stub_spree_preferences(currency: "JPY")
     end
 
     it "formats correctly" do
@@ -168,9 +136,7 @@ RSpec.describe Spree::Money do
 
   context "EUR" do
     before do
-      configure_spree_preferences do |config|
-        config.currency = "EUR"
-      end
+      stub_spree_preferences(currency: "EUR")
     end
 
     # Regression test for https://github.com/spree/spree/issues/2634

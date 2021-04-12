@@ -12,18 +12,24 @@ module Spree
       end
     end
 
+    describe "preferences" do
+      subject { described_class.new.preferences }
+
+      it { is_expected.to be_a(Hash) }
+    end
+
     it "forces developer to implement eligible? method" do
       expect { BadTestRule.new.eligible?("promotable") }.to raise_error NotImplementedError
     end
 
     it "validates unique rules for a promotion" do
-      p1 = TestRule.new
-      p1.promotion_id = 1
-      p1.save
+      promotion_one = TestRule.new
+      promotion_one.promotion_id = 1
+      promotion_one.save
 
-      p2 = TestRule.new
-      p2.promotion_id = 1
-      expect(p2).not_to be_valid
+      promotion_two = TestRule.new
+      promotion_two.promotion_id = 1
+      expect(promotion_two).not_to be_valid
     end
 
     it "generates its own partial path" do

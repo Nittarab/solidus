@@ -18,8 +18,10 @@ would have the slug `summer-t-shirt`.
   sold for other price values.)
 - **Cost Price**: What the product costs you, the seller, to purchase or
   produce. You may change the currency associated with the cost price.
-- **Available On**: The date that this product is available to be sold. If this
+- [**Available On**](#available-on): The date that this product is available to be sold. If this
   date is not set, then the product is not shown to customers on the storefront.
+- [**Discontinue On**](#discontinue-on): The date this product is discontinued from being sold.
+  If this date is set, then the product is not available on the storefront from that day on anymore.
 - **Taxons**: This adds the product your store's taxons.
 - **Option Types**: Add option types to your product if you want to offer
   [multiple variants of the product](#). You need to define [option
@@ -29,18 +31,28 @@ would have the slug `summer-t-shirt`.
  Fill in (#) links to variants-related documentation.
 -->
 
-### Available On
-
-Note that the **Available On** field should be filled if you want the product to
-be displayed on the storefront. 
-
-If the **Available On** value is a date in the future, then the product is only
-available after the date that has been set.
-
 [^slug]: A slug is a part of a URL that identifies a page using human-readable
   words. Most blogs and stores use slugs for SEO purposes. For example, in the
   web address `https://example.com/store/summer-t-shirt`, the slug would be the
   `summer-t-shirt` part.
+
+## Product Availability
+
+Products have time based availability. Products can be made available and
+unavailable by setting two dates.
+
+### Available On
+
+Note that the **Available On** field should be filled if you want the product to
+be displayed on the storefront.
+
+If the **Available On** value is a date in the future, then the product is only
+available after the date that has been set.
+
+### Discontinue On
+
+If the **Discontinue On** value is set, then the product is not available after
+the date anymore.
 
 ## Inventory information
 
@@ -51,8 +63,8 @@ systems:
   products.
 - **Weight**: The product's weight.
 - **Height**: The product's height.
-- **Width**: The product's width. 
-- **Depth**: The product's depth. 
+- **Width**: The product's width.
+- **Depth**: The product's depth.
 - **Shipping Categories**: This sets the product's shipping category.
 - **Tax Category**: This sets the products' tax category.
 
@@ -69,12 +81,16 @@ order's shipment costs.
 
 ## SEO information
 
-- **Meta Title**: 
-- **Meta Keywords**: Add a list of keywords that should be added to this
+- **Meta Title**: Adds content to the product page's HTML `<title>` tag, which
+    is used by search engines.
+- **Meta Keywords**: A list of keywords that should be added to this
   product's metadata. These meta keywords are used by search
   engines.[^meta-keywords]
 - **Meta Description**: The summary text that accompanies your page in search
   engine results.[^meta-descriptions]
+
+If the product's SEO fields are not filled in, then the product inherits [the
+store's global SEO information settings][stores].
 
 [^meta-keywords]: Meta keywords are used for SEO purposes. For more information
   about meta keywords see the article [Meta Keywords: What They Are and How They
@@ -87,3 +103,4 @@ order's shipment costs.
 
 [meta-keywords]: https://www.wordstream.com/meta-keyword
 [meta-description]: https://moz.com/learn/seo/meta-description
+[stores]: ../settings/stores.html

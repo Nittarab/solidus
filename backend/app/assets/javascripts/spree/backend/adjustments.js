@@ -5,8 +5,8 @@ Spree.ready(function() {
     }
 
     Spree.ajax({
-      type: 'PUT',
-      url: Spree.routes.apply_coupon_code(window.order_number),
+      type: 'POST',
+      url: Spree.pathFor('api/orders/' + window.order_number + '/coupon_codes'),
       data: {
         coupon_code: $("#coupon_code").val(),
         token: Spree.api_key

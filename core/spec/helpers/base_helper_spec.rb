@@ -16,7 +16,7 @@ RSpec.describe Spree::BaseHelper, type: :helper do
 
     context "with no checkout zone defined" do
       before do
-        Spree::Config[:checkout_zone] = nil
+        stub_spree_preferences(checkout_zone: nil)
       end
 
       it "return complete list of countries" do
@@ -33,7 +33,7 @@ RSpec.describe Spree::BaseHelper, type: :helper do
         before do
           @country_zone = create(:zone, name: "CountryZone")
           @country_zone.members.create(zoneable: country)
-          Spree::Config[:checkout_zone] = @country_zone.name
+          stub_spree_preferences(checkout_zone: @country_zone.name)
         end
 
         it "return only the countries defined by the checkout zone" do
@@ -50,7 +50,7 @@ RSpec.describe Spree::BaseHelper, type: :helper do
           state_zone = create(:zone, name: "StateZone")
           state = create(:state, country: country)
           state_zone.members.create(zoneable: state)
-          Spree::Config[:checkout_zone] = state_zone.name
+          stub_spree_preferences(checkout_zone: state_zone.name)
         end
 
         it "return complete list of countries" do
@@ -121,10 +121,9 @@ RSpec.describe Spree::BaseHelper, type: :helper do
 
   # Regression test for https://github.com/spree/spree/issues/2396
   context "meta_data_tags" do
+    let(:controller_name) { 'test' }
+
     it "truncates a product description to 160 characters" do
-      # Because the controller_name method returns "test"
-      # controller_name is used by this method to infer what it is supposed
-      # to be generating meta_data_tags for
       @test = Spree::Product.new(description: "a" * 200)
       tags = Nokogiri::HTML.parse(meta_data_tags)
       content = tags.css("meta[name=description]").first["content"]

@@ -25,7 +25,7 @@ module Spree
         end
 
         it "cannot list stock items for an inactive stock location" do
-          stock_location.update_attributes!(active: false)
+          stock_location.update!(active: false)
           get spree.api_stock_location_stock_items_path(stock_location)
           expect(response).to be_not_found
         end
@@ -39,7 +39,7 @@ module Spree
         end
 
         it "cannot see a stock item for an inactive stock location" do
-          stock_location.update_attributes!(active: false)
+          stock_location.update!(active: false)
           get spree.api_stock_location_stock_item_path(stock_location, stock_item)
           expect(response.status).to eq(404)
         end
@@ -155,7 +155,7 @@ module Spree
 
         context 'variant does not track inventory' do
           before do
-            variant.update_attributes(track_inventory: false)
+            variant.update(track_inventory: false)
           end
 
           it "doesn't set the stock item's count_on_hand" do
@@ -170,7 +170,7 @@ module Spree
           it "does not allow negative inventory for the stock item" do
             subject
             expect(response.status).to eq 422
-            expect(response.body).to match I18n.t('spree.stock_not_below_zero')
+            expect(response.body).to match I18n.t('spree.api.stock_not_below_zero')
             expect(assigns(:stock_item).count_on_hand).to eq 0
           end
         end
@@ -221,7 +221,7 @@ module Spree
 
           context 'not tracking inventory' do
             before do
-              stock_item.variant.update_attributes(track_inventory: false)
+              stock_item.variant.update(track_inventory: false)
             end
 
             it "doesn't set the stock item's count_on_hand" do
@@ -236,7 +236,7 @@ module Spree
             it "does not allow negative inventory for the stock item" do
               subject
               expect(response.status).to eq 422
-              expect(response.body).to match I18n.t('spree.stock_not_below_zero')
+              expect(response.body).to match I18n.t('spree.api.stock_not_below_zero')
               expect(assigns(:stock_item).count_on_hand).to eq 10
             end
           end
@@ -279,7 +279,7 @@ module Spree
 
           context 'not tracking inventory' do
             before do
-              stock_item.variant.update_attributes(track_inventory: false)
+              stock_item.variant.update(track_inventory: false)
             end
 
             it "doesn't update the stock item's count_on_hand" do
@@ -294,7 +294,7 @@ module Spree
             it "does not allow negative inventory for the stock item" do
               subject
               expect(response.status).to eq 422
-              expect(response.body).to match I18n.t('spree.stock_not_below_zero')
+              expect(response.body).to match I18n.t('spree.api.stock_not_below_zero')
               expect(assigns(:stock_item).count_on_hand).to eq 10
             end
           end

@@ -3,9 +3,26 @@
 require 'rails_helper'
 
 RSpec.describe Spree::Variant, type: :model do
+  it { is_expected.to be_invalid }
+
   let!(:variant) { create(:variant) }
 
   it_behaves_like 'default_price'
+
+  describe 'delegates' do
+    let(:product) { build(:product) }
+    let(:variant) { build(:variant, product: product) }
+
+    it 'discontinue_on to product' do
+      expect(product).to receive(:discontinue_on)
+      variant.discontinue_on
+    end
+
+    it 'discontinued? to product' do
+      expect(product).to receive(:discontinued?)
+      variant.discontinued?
+    end
+  end
 
   context "validations" do
     it "should validate price is greater than 0" do
@@ -21,6 +38,8 @@ RSpec.describe Spree::Variant, type: :model do
     it "should require a product" do
       expect(variant).to be_valid
       variant.product = nil
+      expect(variant).to be_invalid
+      variant.price = nil
       expect(variant).to be_invalid
     end
   end
@@ -155,7 +174,7 @@ RSpec.describe Spree::Variant, type: :model do
       context "and a variant is really deleted" do
         let!(:old_option_values_variant_ids) { variant.option_values_variants.pluck(:id) }
 
-        before { variant.really_destroy! }
+        before { variant.destroy }
 
         it "leaves no stale records behind" do
           expect(old_option_values_variant_ids).to be_present
@@ -343,74 +362,6 @@ RSpec.describe Spree::Variant, type: :model do
     end
   end
 
-  describe '.price_in' do
-    before do
-      variant.prices << create(:price, variant: variant, currency: "EUR", amount: 33.33)
-    end
-
-    subject do
-      Spree::Deprecation.silence { variant.price_in(currency) }
-    end
-
-    context "when currency is not specified" do
-      let(:currency) { nil }
-
-      it "returns nil" do
-        expect(subject).to be_nil
-      end
-    end
-
-    context "when currency is EUR" do
-      let(:currency) { 'EUR' }
-
-      it "returns the value in the EUR" do
-        expect(subject.display_price.to_s).to eql "€33.33"
-      end
-    end
-
-    context "when currency is USD" do
-      let(:currency) { 'USD' }
-
-      it "returns the value in the USD" do
-        expect(subject.display_price.to_s).to eql "$19.99"
-      end
-    end
-  end
-
-  describe '.amount_in' do
-    before do
-      variant.prices << create(:price, variant: variant, currency: "EUR", amount: 33.33)
-    end
-
-    subject do
-      Spree::Deprecation.silence { variant.amount_in(currency) }
-    end
-
-    context "when currency is not specified" do
-      let(:currency) { nil }
-
-      it "returns the amount in the default currency" do
-        expect(subject).to be_nil
-      end
-    end
-
-    context "when currency is EUR" do
-      let(:currency) { 'EUR' }
-
-      it "returns the value in the EUR" do
-        expect(subject).to eql 33.33
-      end
-    end
-
-    context "when currency is USD" do
-      let(:currency) { 'USD' }
-
-      it "returns the value in the USD" do
-        expect(subject).to eql 19.99
-      end
-    end
-  end
-
   # Regression test for https://github.com/spree/spree/issues/2432
   describe 'options_text' do
     let!(:variant) { create(:variant, option_values: []) }
@@ -512,7 +463,7 @@ RSpec.describe Spree::Variant, type: :model do
 
   describe '#in_stock?' do
     before do
-      Spree::Config.track_inventory_levels = true
+      stub_spree_preferences(track_inventory_levels: true)
     end
 
     context 'when stock_items are not backorderable' do
@@ -593,7 +544,7 @@ RSpec.describe Spree::Variant, type: :model do
 
   describe '#total_on_hand' do
     it 'should be infinite if track_inventory_levels is false' do
-      Spree::Config[:track_inventory_levels] = false
+      stub_spree_preferences(track_inventory_levels: false)
       expect(build(:variant).total_on_hand).to eql(Float::INFINITY)
     end
 
@@ -636,19 +587,19 @@ RSpec.describe Spree::Variant, type: :model do
 
   describe "#should_track_inventory?" do
     it 'should not track inventory when global setting is off' do
-      Spree::Config[:track_inventory_levels] = false
+      stub_spree_preferences(track_inventory_levels: false)
 
       expect(build(:variant).should_track_inventory?).to eq(false)
     end
 
     it 'should not track inventory when variant is turned off' do
-      Spree::Config[:track_inventory_levels] = true
+      stub_spree_preferences(track_inventory_levels: true)
 
       expect(build(:on_demand_variant).should_track_inventory?).to eq(false)
     end
 
     it 'should track inventory when global and variant are on' do
-      Spree::Config[:track_inventory_levels] = true
+      stub_spree_preferences(track_inventory_levels: true)
 
       expect(build(:variant).should_track_inventory?).to eq(true)
     end
@@ -688,7 +639,7 @@ RSpec.describe Spree::Variant, type: :model do
       context 'when loading with pre-fetching of default_price' do
         it 'also keeps the previous price' do
           variant.discard
-          reloaded_variant = Spree::Variant.with_deleted.includes(:default_price).find_by(id: variant.id)
+          reloaded_variant = Spree::Variant.with_discarded.includes(:default_price).find_by(id: variant.id)
           expect(reloaded_variant.display_price).to eq(previous_variant_price)
         end
       end
@@ -745,8 +696,7 @@ RSpec.describe Spree::Variant, type: :model do
     end
 
     context "inventory levels globally not tracked" do
-      before { Spree::Config.track_inventory_levels = false }
-      after { Spree::Config.track_inventory_levels = true }
+      before { stub_spree_preferences(track_inventory_levels: false) }
 
       it 'includes items without inventory' do
         expect( subject ).to include out_of_stock_variant
@@ -779,8 +729,12 @@ RSpec.describe Spree::Variant, type: :model do
       expect( subject ).not_to include(out_of_stock_variant)
     end
 
+    it "includes variants only once" do
+      expect(subject.to_a.count(in_stock_variant)).to be 1
+    end
+
     context "inventory levels globally not tracked" do
-      before { Spree::Config.track_inventory_levels = false }
+      before { stub_spree_preferences(track_inventory_levels: false) }
 
       it "includes all variants" do
         expect( subject ).to include(in_stock_variant, backordered_variant, out_of_stock_variant)
@@ -796,8 +750,8 @@ RSpec.describe Spree::Variant, type: :model do
     subject { variant.variant_properties }
 
     context "variant has properties" do
-      let!(:rule_1) { create(:variant_property_rule, product: variant.product, option_value: option_value_1) }
-      let!(:rule_2) { create(:variant_property_rule, product: variant.product, option_value: option_value_2) }
+      let!(:rule_1) { create(:variant_property_rule, product: variant.product, option_value: option_value_1, apply_to_all: false) }
+      let!(:rule_2) { create(:variant_property_rule, product: variant.product, option_value: option_value_2, apply_to_all: false) }
 
       it "returns the variant property rule's values" do
         expect(subject).to match_array rule_1.values + rule_2.values
@@ -811,12 +765,45 @@ RSpec.describe Spree::Variant, type: :model do
     end
   end
 
-  describe '#gallery' do
-    let(:product) { Spree::Variant.new }
-    subject { product.gallery }
+  describe "#gallery" do
+    let(:variant) { build_stubbed(:variant) }
+    subject { variant.gallery }
 
-    it 'responds to #images' do
+    it "responds to #images" do
       expect(subject).to respond_to(:images)
+    end
+
+    context "when variant.images is empty" do
+      let(:product) { create(:product) }
+      let(:variant) { create(:variant, product: product) }
+
+      it "fallbacks to variant.product.master.images" do
+        product.master.images = [create(:image)]
+
+        expect(product.master).not_to eq variant
+
+        expect(variant.gallery.images).to eq product.master.images
+      end
+
+      context "and variant.product.master.images is also empty" do
+        it "returns Spree::Image.none" do
+          expect(product.master).not_to eq variant
+          expect(product.master.images.presence).to be nil
+
+          expect(variant.gallery.images).to eq Spree::Image.none
+        end
+      end
+
+      context "and is master" do
+        it "returns Spree::Image.none" do
+          variant = product.master
+
+          expect(variant.is_master?).to be true
+          expect(variant.images.presence).to be nil
+
+          expect(variant.gallery.images).to eq Spree::Image.none
+        end
+      end
     end
   end
 end

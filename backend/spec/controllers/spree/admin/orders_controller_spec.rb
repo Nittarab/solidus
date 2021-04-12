@@ -77,7 +77,7 @@ describe Spree::Admin::OrdersController, type: :controller do
     context "#new" do
       let(:user) { create(:user) }
       before do
-        allow(controller).to receive_messages spree_current_user: user
+        allow(controller).to receive_messages try_spree_current_user: user
       end
 
       it "imports a new order and sets the current user as a creator" do
@@ -102,7 +102,7 @@ describe Spree::Admin::OrdersController, type: :controller do
       end
 
       context "when a user_id is passed as a parameter" do
-        let(:user)  { mock_model(Spree.user_class) }
+        let(:user)  { mock_model(Spree.user_class, ship_address: mock_model(Spree::Address), bill_address: nil) }
         before { allow(Spree.user_class).to receive_messages find_by: user }
 
         it "imports a new order and assigns the user to the order" do
@@ -140,7 +140,7 @@ describe Spree::Admin::OrdersController, type: :controller do
         end
 
         context 'when order_bill_address_used is true' do
-          before { Spree::Config[:order_bill_address_used] = true }
+          before { stub_spree_preferences(order_bill_address_used: true) }
 
           it "should redirect to the customer details page" do
             get :edit, params: { id: order.number }
@@ -149,7 +149,7 @@ describe Spree::Admin::OrdersController, type: :controller do
         end
 
         context 'when order_bill_address_used is false' do
-          before { Spree::Config[:order_bill_address_used] = false }
+          before { stub_spree_preferences(order_bill_address_used: false) }
 
           it "should redirect to the customer details page" do
             get :edit, params: { id: order.number }
@@ -288,7 +288,7 @@ describe Spree::Admin::OrdersController, type: :controller do
       let(:user) { create(:user) }
 
       before do
-        allow(controller).to receive_messages spree_current_user: user
+        allow(controller).to receive_messages try_spree_current_user: user
         user.spree_roles << Spree::Role.find_or_create_by(name: 'admin')
 
         create_list(:completed_order_with_totals, 2)
@@ -361,7 +361,7 @@ describe Spree::Admin::OrdersController, type: :controller do
     let!(:order) { create(:completed_order_with_totals, number: 'R987654321') }
 
     before do
-      allow(controller).to receive_messages spree_current_user: user
+      allow(controller).to receive_messages try_spree_current_user: user
     end
 
     it 'should grant access to users with an admin role' do
@@ -396,13 +396,13 @@ describe Spree::Admin::OrdersController, type: :controller do
     end
   end
 
-  context "order number not given" do
+  context "existent order number not given" do
     stub_authorization!
 
-    it "raise active record not found" do
-      expect {
-        get :edit, params: { id: 0 }
-      }.to raise_error ActiveRecord::RecordNotFound
+    it "cannot find non-existent order" do
+      get :edit, params: { id: 0 }
+      expect(response).to redirect_to(spree.admin_orders_path)
+      expect(flash[:error]).to eql("Order is not found")
     end
   end
 end

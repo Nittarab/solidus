@@ -33,9 +33,8 @@ describe "Free shipping promotions", type: :feature, js: true do
       click_link "RoR Mug"
       click_button "add-to-cart-button"
       click_button "Checkout"
-      fill_in "order_email", with: "spree@example.com"
-      fill_in "First Name", with: "John"
-      fill_in "Last Name", with: "Smith"
+      fill_in "order_email", with: "solidus@example.com"
+      fill_in "Name", with: "John Smith"
       fill_in "Street Address", with: "1 John Street"
       fill_in "City", with: "City of John"
       fill_in "Zip", with: "01337"
@@ -52,8 +51,8 @@ describe "Free shipping promotions", type: :feature, js: true do
     # Regression test for https://github.com/spree/spree/issues/4428
     it "applies the free shipping promotion" do
       within("#checkout-summary") do
-        expect(page).to have_content("Shipping total:  $10.00")
-        expect(page).to have_content("Promotion (Free Shipping): -$10.00")
+        expect(page).to have_content("Shipping total: $10.00", normalize_ws: true)
+        expect(page).to have_content("Promotion (Free Shipping): -$10.00", normalize_ws: true)
       end
     end
   end

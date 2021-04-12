@@ -2,12 +2,10 @@
 
 require 'rails_helper'
 
-class FakesController < ApplicationController
-  include Spree::Core::ControllerHelpers::StrongParameters
-end
-
 RSpec.describe Spree::Core::ControllerHelpers::StrongParameters, type: :controller do
-  controller(FakesController) {}
+  controller(ApplicationController) {
+    include Spree::Core::ControllerHelpers::StrongParameters
+  }
 
   describe '#permitted_attributes' do
     it 'returns Spree::PermittedAttributes module' do
@@ -18,12 +16,6 @@ RSpec.describe Spree::Core::ControllerHelpers::StrongParameters, type: :controll
   describe '#permitted_payment_attributes' do
     it 'returns Array class' do
       expect(controller.permitted_payment_attributes.class).to eq Array
-    end
-  end
-
-  describe '#permitted_checkout_attributes' do
-    it 'returns Array class' do
-      expect(controller.permitted_checkout_attributes.class).to eq Array
     end
   end
 

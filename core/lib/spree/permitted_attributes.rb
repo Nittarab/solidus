@@ -8,7 +8,10 @@ module Spree
     ATTRIBUTES = [
       :address_attributes,
       :address_book_attributes,
-      :checkout_attributes,
+      :checkout_address_attributes,
+      :checkout_delivery_attributes,
+      :checkout_payment_attributes,
+      :checkout_confirm_attributes,
       :credit_card_update_attributes,
       :customer_return_attributes,
       :image_attributes,
@@ -36,18 +39,13 @@ module Spree
     mattr_reader(*ATTRIBUTES)
 
     @@address_attributes = [
-      :id, :firstname, :lastname, :first_name, :last_name,
-      :address1, :address2, :city, :country_id, :state_id,
+      :id, :name, :address1, :address2, :city, :country_id, :state_id,
       :zipcode, :phone, :state_name, :country_iso, :alternative_phone, :company,
       country: [:iso, :name, :iso3, :iso_name],
       state: [:name, :abbr]
     ]
 
     @@address_book_attributes = address_attributes + [:default]
-
-    @@checkout_attributes = [
-      :coupon_code, :email, :special_instructions, :use_billing
-    ]
 
     @@credit_card_update_attributes = [
       :month, :year, :expiry, :first_name, :last_name, :name
@@ -70,7 +68,7 @@ module Spree
     @@product_properties_attributes = [:property_name, :value, :position]
 
     @@product_attributes = [
-      :name, :description, :available_on, :permalink, :meta_description,
+      :name, :description, :available_on, :discontinue_on, :permalink, :meta_description,
       :meta_keywords, :price, :sku, :deleted_at,
       :option_values_hash, :weight, :height, :width, :depth,
       :shipping_category_id, :tax_category_id,
@@ -79,7 +77,7 @@ module Spree
 
     @@property_attributes = [:name, :presentation]
 
-    @@return_authorization_attributes = [:memo, :stock_location_id, :return_reason_id, return_items_attributes: [:inventory_unit_id, :exchange_variant_id, :return_reason_id]]
+    @@return_authorization_attributes = [:memo, :stock_location_id, :return_reason_id, return_items_attributes: [:inventory_unit_id, :exchange_variant_id, :return_reason_id, :preferred_reimbursement_type_id]]
 
     @@shipment_attributes = [
       :special_instructions, :stock_location_id, :id, :tracking,
@@ -91,7 +89,7 @@ module Spree
       :number, :month, :year, :expiry, :verification_value,
       :first_name, :last_name, :cc_type, :gateway_customer_profile_id,
       :gateway_payment_profile_id, :last_digits, :name, :encrypted_data,
-      :existing_card_id, :wallet_payment_source_id
+      :wallet_payment_source_id, address_attributes: address_attributes
     ]
 
     @@stock_item_attributes = [:variant, :stock_location, :backorderable, :variant_id]
@@ -108,7 +106,8 @@ module Spree
 
     @@store_attributes = [:name, :url, :seo_title, :meta_keywords,
                           :meta_description, :default_currency,
-                          :mail_from_address, :cart_tax_country_iso]
+                          :mail_from_address, :cart_tax_country_iso,
+                          :bcc_email]
 
     @@taxonomy_attributes = [:name]
 
@@ -117,10 +116,10 @@ module Spree
       :meta_description, :meta_keywords, :meta_title, :child_index
     ]
 
-    # intentionally leaving off email here to prevent privilege escalation
+    # Intentionally leaving off email here to prevent privilege escalation
     # by changing a user with higher priveleges' email to one a lower-priveleged
-    # admin owns. creating a user with an email is handled separate at the
-    # controller level
+    # admin owns. Creating a user with an email is handled separate at the
+    # controller level.
     @@user_attributes = [:password, :password_confirmation]
 
     @@variant_attributes = [
@@ -129,5 +128,25 @@ module Spree
       :product_id, :product, :option_values_attributes, :price,
       :weight, :height, :width, :depth, :sku, :cost_currency, option_value_ids: [], options: [:name, :value]
     ]
+
+    @@checkout_address_attributes = [
+      :use_billing,
+      :email,
+      bill_address_attributes: address_attributes,
+      ship_address_attributes: address_attributes
+    ]
+
+    @@checkout_delivery_attributes = [
+      :special_instructions,
+      shipments_attributes: shipment_attributes
+    ]
+
+    @@checkout_payment_attributes = [
+      payments_attributes: payment_attributes + [
+        source_attributes: source_attributes
+      ]
+    ]
+
+    @@checkout_confirm_attributes = []
   end
 end

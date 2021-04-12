@@ -3,10 +3,7 @@
 Spree::Core::Engine.routes.draw do
   namespace :admin do
     resources :users do
-      member do
-        put :generate_api_key
-        put :clear_api_key
-      end
+      resource :api_key, controller: 'users/api_key', only: [:create, :destroy]
     end
   end
 
@@ -38,6 +35,8 @@ Spree::Core::Engine.routes.draw do
           put :cancel
         end
       end
+
+      resources :customer_returns, except: :destroy
     end
 
     resources :checkouts, only: [:update], concerns: :order_routes do
@@ -57,7 +56,6 @@ Spree::Core::Engine.routes.draw do
     end
     resources :option_values
 
-    resources :option_values, only: :index
     get '/orders/mine', to: 'orders#mine', as: 'my_orders'
     get "/orders/current", to: "orders#current", as: "current_order"
 
@@ -65,8 +63,9 @@ Spree::Core::Engine.routes.draw do
       member do
         put :cancel
         put :empty
-        put :apply_coupon_code
       end
+
+      resources :coupon_codes, only: [:create, :destroy]
     end
 
     resources :zones
@@ -94,14 +93,7 @@ Spree::Core::Engine.routes.draw do
     resources :states, only: [:index, :show]
 
     resources :taxonomies do
-      member do
-        get :jstree
-      end
-      resources :taxons do
-        member do
-          get :jstree
-        end
-      end
+      resources :taxons
     end
 
     resources :taxons, only: [:index]

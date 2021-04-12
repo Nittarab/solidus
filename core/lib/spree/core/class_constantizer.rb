@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'active_support/core_ext/module'
+
 module Spree
   module Core
     module ClassConstantizer
@@ -18,9 +20,15 @@ module Spree
           klasses.each do |klass|
             self << klass
           end
+
+          self
         end
 
         delegate :clear, :empty?, to: :@collection
+
+        def delete(object)
+          @collection.delete(object.to_s)
+        end
 
         def each
           @collection.each do |klass|

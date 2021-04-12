@@ -1,23 +1,11 @@
 # frozen_string_literal: true
 
-require 'discard'
-
 module Spree
   # Represents a means of having a shipment delivered, such as FedEx or UPS.
   #
   class ShippingMethod < Spree::Base
-    acts_as_paranoid
-    include Spree::ParanoiaDeprecations
-
-    include Discard::Model
-    self.discard_column = :deleted_at
-
+    include Spree::SoftDeletable
     include Spree::CalculatedAdjustments
-    DISPLAY = ActiveSupport::Deprecation::DeprecatedObjectProxy.new(
-      [:both, :front_end, :back_end],
-      "Spree::ShippingMethod::DISPLAY is deprecated",
-      Spree::Deprecation
-    )
 
     has_many :shipping_method_categories, dependent: :destroy
     has_many :shipping_categories, through: :shipping_method_categories
@@ -28,7 +16,7 @@ module Spree
     has_many :shipping_method_zones, dependent: :destroy
     has_many :zones, through: :shipping_method_zones
 
-    belongs_to :tax_category, -> { with_deleted }, class_name: 'Spree::TaxCategory'
+    belongs_to :tax_category, -> { with_discarded }, class_name: 'Spree::TaxCategory', optional: true
     has_many :shipping_method_stock_locations, dependent: :destroy, class_name: "Spree::ShippingMethodStockLocation"
     has_many :stock_locations, through: :shipping_method_stock_locations
 
@@ -41,7 +29,7 @@ module Spree
 
     scope :available_to_store, ->(store) do
       raise ArgumentError, "You must provide a store" if store.nil?
-      store.shipping_methods.empty? ? all : where(id: store.shipping_method_ids)
+      store.shipping_methods.empty? ? all : where(id: store.shipping_methods.ids)
     end
 
     # @param shipping_category_ids [Array<Integer>] ids of desired shipping categories
@@ -102,31 +90,11 @@ module Spree
       tracking_url.gsub(/:tracking/, ERB::Util.url_encode(tracking)) # :url_encode exists in 1.8.7 through 2.1.0
     end
 
-    def display_on
-      if available_to_users?
-        "both"
-      else
-        "back_end"
-      end
-    end
-    deprecate display_on: :available_to_users?, deprecator: Spree::Deprecation
-
-    def display_on=(value)
-      self.available_to_users = (value != "back_end")
-    end
-    deprecate 'display_on=': :available_to_users=, deprecator: Spree::Deprecation
-
-    # Some shipping methods are only meant to be set via backend
-    def frontend?
-      available_to_users?
-    end
-    deprecate frontend?: :available_to_users?, deprecator: Spree::Deprecation
-
     private
 
     def at_least_one_shipping_category
       if shipping_categories.empty?
-        errors[:base] << "You need to select at least one shipping category"
+        errors.add(:base, "You need to select at least one shipping category")
       end
     end
   end

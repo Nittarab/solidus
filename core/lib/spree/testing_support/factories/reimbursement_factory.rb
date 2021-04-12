@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
-require 'spree/testing_support/factories/customer_return_factory'
+require 'spree/testing_support/factory_bot'
+Spree::TestingSupport::FactoryBot.when_cherry_picked do
+  Spree::TestingSupport::FactoryBot.deprecate_cherry_picking
+
+  require 'spree/testing_support/factories/customer_return_factory'
+end
 
 FactoryBot.define do
   factory :reimbursement, class: 'Spree::Reimbursement' do
@@ -15,7 +20,7 @@ FactoryBot.define do
       if reimbursement.return_items.empty?
         reimbursement.return_items = reimbursement.customer_return.return_items
       end
-      reimbursement.total = reimbursement.return_items.map { |ri| ri.amount }.sum
+      reimbursement.total = reimbursement.return_items.sum(&:amount)
     end
   end
 end

@@ -2,21 +2,19 @@
 
 module Spree
   class Refund < Spree::Base
-    belongs_to :payment, inverse_of: :refunds
-    belongs_to :reason, class_name: 'Spree::RefundReason', foreign_key: :refund_reason_id
-    belongs_to :reimbursement, inverse_of: :refunds
+    belongs_to :payment, inverse_of: :refunds, optional: true
+    belongs_to :reason, class_name: 'Spree::RefundReason', foreign_key: :refund_reason_id, optional: true
+    belongs_to :reimbursement, inverse_of: :refunds, optional: true
 
     has_many :log_entries, as: :source
 
     validates :payment, presence: true
     validates :reason, presence: true
-    validates :transaction_id, presence: true, on: :update # can't require this on create because the before_create needs to run first
     validates :amount, presence: true, numericality: { greater_than: 0 }
 
     validate :amount_is_less_than_or_equal_to_allowed_amount, on: :create
 
-    after_create :perform!
-    after_create :create_log_entry
+    attr_reader :perform_response
 
     scope :non_reimbursement, -> { where(reimbursement_id: nil) }
 
@@ -37,21 +35,25 @@ module Spree
       payment.payment_method.name
     end
 
-    private
-
-    # attempts to perform the refund.
+    # Must be called for the refund transaction to be processed.
+    #
+    # Attempts to perform the refund,
     # raises an error if the refund fails.
     def perform!
       return true if transaction_id.present?
 
       credit_cents = money.cents
 
-      @response = process!(credit_cents)
+      @perform_response = process!(credit_cents)
+      log_entries.build(details: perform_response.to_yaml)
 
-      self.transaction_id = @response.authorization
-      update_columns(transaction_id: transaction_id)
+      self.transaction_id = perform_response.authorization
+      save!
+
       update_order
     end
+
+    private
 
     # return an activemerchant response object if successful or else raise an error
     def process!(credit_cents)
@@ -68,13 +70,9 @@ module Spree
       end
 
       response
-    rescue ActiveMerchant::ConnectionError => e
-      logger.error(I18n.t('spree.gateway_error') + "  #{e.inspect}")
+    rescue ActiveMerchant::ConnectionError => error
+      logger.error(I18n.t('spree.gateway_error') + "  #{error.inspect}")
       raise Core::GatewayError.new(I18n.t('spree.unable_to_connect_to_gateway'))
-    end
-
-    def create_log_entry
-      log_entries.create!(details: @response.to_yaml)
     end
 
     def amount_is_less_than_or_equal_to_allowed_amount

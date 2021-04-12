@@ -10,7 +10,7 @@ $.fn.userAutocomplete = function () {
     multiple: true,
     initSelection: function (element, callback) {
       Spree.ajax({
-        url: Spree.routes.users_api,
+        url: Spree.pathFor('api/users'),
         data: {
           ids: element.val()
         },
@@ -20,16 +20,15 @@ $.fn.userAutocomplete = function () {
       });
     },
     ajax: {
-      url: Spree.routes.users_api,
+      url: Spree.pathFor('api/users'),
       datatype: 'json',
-      params: { "headers": { "X-Spree-Token": Spree.api_key } },
+      params: { "headers": {  'Authorization': 'Bearer ' + Spree.api_key } },
       data: function (term) {
         return {
           q: {
             m: 'or',
             email_start: term,
-            addresses_firstname_start: term,
-            addresses_lastname_start: term
+            name_start: term
           }
         };
       },

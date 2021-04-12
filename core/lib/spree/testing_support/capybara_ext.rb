@@ -12,24 +12,27 @@ module Spree
         fill_in field, options
       end
 
+      def fill_in_with_force(locator, with:)
+        if Capybara.current_driver == Capybara.javascript_driver
+          field_id = find_field(locator)[:id]
+          page.execute_script <<-JS
+            var field = document.getElementById('#{field_id}');
+            field.value = '#{with}';
+
+            var event = new Event('change', { bubbles: true });
+            field.dispatchEvent(event);
+          JS
+        else
+          fill_in locator, with: with
+        end
+      end
+
       def within_row(num, &block)
         within("table.index tbody tr:nth-of-type(#{num})", &block)
       end
 
       def column_text(num)
         find("td:nth-of-type(#{num})").text
-      end
-
-      def fill_in_quantity(table_column, selector, quantity)
-        Spree::Deprecation.warn <<-WARN.strip_heredoc
-          fill_in_quantity is deprecated. Instead use:
-            within(#{table_column.inspect}) do
-              fill_in #{selector.inspect}, with: #{quantity.inspect}
-            end
-        WARN
-        within(table_column) do
-          fill_in selector, with: quantity
-        end
       end
 
       def select2_search(value, options)
@@ -93,7 +96,9 @@ module Spree
       def select_select2_result(value)
         # results are in a div appended to the end of the document
         within_entire_page do
-          page.find("div.select2-result-label", text: /#{Regexp.escape(value)}/i, match: :prefer_exact).click
+          expect(page).to have_selector('.select2-result-label', visible: true)
+          find("div.select2-result-label", text: /#{Regexp.escape(value)}/i, match: :prefer_exact).click
+          expect(page).not_to have_selector('.select2-result-label')
         end
       end
 
@@ -104,21 +109,6 @@ module Spree
         # makes a duplicate label with the same text, and we want to be sure to
         # find the original.
         find('label:not(.select2-offscreen)', text: /#{Regexp.escape(text)}/i, match: :one)
-      end
-
-      def wait_for_ajax
-        Spree::Deprecation.warn <<-WARN.squish, caller
-          wait_for_ajax has been deprecated.
-          Please refer to the capybara documentation on how to properly wait for asyncronous behavior:
-          https://github.com/teamcapybara/capybara#asynchronous-javascript-ajax-and-friends
-        WARN
-
-        counter = 0
-        while page.evaluate_script("typeof($) === 'undefined' || $.active > 0")
-          counter += 1
-          sleep(0.1)
-          raise "AJAX request took longer than 5 seconds." if counter >= 50
-        end
       end
     end
   end
@@ -139,9 +129,9 @@ RSpec::Matchers.define :have_meta do |name, expected|
   end
 end
 
-# @private
-CapybaraExt = ActiveSupport::Deprecation::DeprecatedConstantProxy.new('CapybaraExt', 'Spree::TestingSupport::CapybaraExt')
-
 RSpec.configure do |c|
   c.include Spree::TestingSupport::CapybaraExt
 end
+
+# A workaround for https://github.com/rspec/rspec-rails/issues/1897
+Capybara.server = :puma, { Silent: true }
